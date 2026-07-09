@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#173a33">
+    <meta name="color-scheme" content="light">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="Ein einfacher Spielleiter für das Kartenspiel Aufzug.">
+    <title>Aufzug – Spielleiter</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div id="app" class="app-shell" aria-live="polite"></div>
+
+    <dialog id="wizard-dialog" class="sheet-dialog" aria-labelledby="wizard-title">
+      <div id="wizard-content"></div>
+    </dialog>
+
+    <dialog id="edit-dialog" class="sheet-dialog edit-dialog" aria-labelledby="edit-title">
+      <div id="edit-content"></div>
+    </dialog>
+
+    <dialog id="menu-dialog" class="sheet-dialog compact-dialog" aria-labelledby="menu-title">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">Einstellungen</span>
+          <h2 id="menu-title">Partie-Menü</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="menu-dialog" aria-label="Menü schließen">×</button>
+      </div>
+      <div class="menu-list">
+        <button type="button" id="export-game-button" class="menu-button">
+          <span>Sicherung exportieren</span><small>Partie als Datei speichern</small>
+        </button>
+        <button type="button" id="import-game-button" class="menu-button">
+          <span>Sicherung importieren</span><small>Gespeicherte Partie laden</small>
+        </button>
+        <button type="button" id="help-button" class="menu-button">
+          <span>Regeln & Annahmen</span><small>So rechnet die App</small>
+        </button>
+        <button type="button" id="new-game-button" class="menu-button danger-menu">
+          <span>Neue Partie</span><small>Aktuelle Partie beenden</small>
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="help-dialog" class="sheet-dialog compact-dialog" aria-labelledby="help-title">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">Kurz erklärt</span>
+          <h2 id="help-title">Regeln in dieser App</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="help-dialog" aria-label="Regeln schließen">×</button>
+      </div>
+      <div class="help-copy">
+        <p>Zwei Decks von 7 bis Ass ergeben 64 Karten. Eine Karte bleibt für den Aufdeckstapel übrig; bei höchstens 11 Karten pro Person ergibt das zum Beispiel 11 Karten bei fünf und 10 Karten bei sechs Spielern.</p>
+        <ul>
+          <li>Es geht von 1 bis zum Maximum und wieder zurück auf 1.</li>
+          <li>Bei einer Karte bleibt die Aufdeckkarte verdeckt, sonst wird sie als Trumpf aufgedeckt.</li>
+          <li>Die Summe aller Ansagen darf nicht genau der Kartenanzahl entsprechen.</li>
+          <li>Exakt getroffen: 10 + 2 Punkte je angesagtem Stich. Daneben: −2 Punkte je Stich Abweichung.</li>
+          <li>Der Geber rotiert pro Runde und sagt zuletzt an.</li>
+        </ul>
+        <p>Der Stand wird nur auf diesem Gerät gespeichert. Es werden keine Namen oder Ergebnisse versendet.</p>
+      </div>
+      <button class="primary-button full-width" type="button" data-close-dialog="help-dialog">Verstanden</button>
+    </dialog>
+
+    <input id="import-file" type="file" accept="application/json,.json" hidden>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <noscript>Für den Aufzug-Spielleiter muss JavaScript aktiviert sein.</noscript>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

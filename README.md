@@ -9,6 +9,7 @@ Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten
 - Rundenfolge von 1 bis zum Maximum und wieder zurück auf 1; der Höchstwert wird einmal gespielt.
 - In Ein-Karten-Runden bleibt die Aufdeckkarte verdeckt, sonst wird die nächste Karte als Trumpf aufgedeckt.
 - Die Summe aller Ansagen darf nicht genau der Anzahl möglicher Stiche entsprechen.
+- Bei der Auswertung werden die tatsächlich gemachten Stiche frei und unabhängig eingetragen.
 - Exakt erfüllt: `10 + 2 × Ansage`; nicht erfüllt: `−2 × Abweichung`.
 - Der Geber rotiert und sagt in seiner Runde zuletzt an.
 

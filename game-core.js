@@ -75,10 +75,6 @@ export function validateTricks(tricks, playerIds, cards) {
   }
 
   const total = sumValues(tricks, playerIds);
-  if (total !== cards) {
-    return { valid: false, reason: "total", total };
-  }
-
   return { valid: true, reason: null, total };
 }
 

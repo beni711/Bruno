@@ -38,10 +38,12 @@ test("Ansagensumme darf nicht der Anzahl möglicher Stiche entsprechen", () => {
   assert.equal(validateBids({ p1: 1, p2: 1 }, ids, 2).reason, "missing");
 });
 
-test("Tatsächliche Stiche müssen genau aufgehen", () => {
+test("Tatsächliche Ergebnisse werden unabhängig voneinander erfasst", () => {
   const ids = ["p1", "p2", "p3"];
   assert.equal(validateTricks({ p1: 0, p2: 1, p3: 1 }, ids, 2).valid, true);
-  assert.equal(validateTricks({ p1: 0, p2: 0, p3: 1 }, ids, 2).reason, "total");
+  assert.equal(validateTricks({ p1: 0, p2: 0, p3: 1 }, ids, 2).valid, true);
+  assert.equal(validateTricks({ p1: 0, p2: 0, p3: 0 }, ids, 1).valid, true);
+  assert.equal(validateTricks({ p1: 0, p2: 0 }, ids, 2).reason, "missing");
 });
 
 test("Treffer und Abweichungen werden korrekt bepunktet", () => {

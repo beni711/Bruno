@@ -550,25 +550,14 @@ function renderTrickWizard() {
   const player = game.players[playerIndex];
   const selected = round.tricks[player.id];
   const isLast = trickWizard.step === order.length - 1;
-  const othersTotal = playerIds().filter((id) => id !== player.id).reduce((sum, id) => sum + (Number.isInteger(round.tricks[id]) ? round.tricks[id] : 0), 0);
-  const remaining = round.cards - othersTotal;
-  const total = sumValues(round.tricks, playerIds());
   const validation = validateTricks(round.tricks, playerIds(), round.cards);
   const predictedPoints = Number.isInteger(selected) ? pointsForRound(round.bids[player.id], selected) : 0;
   const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
 
-  const numberButtons = Array.from({ length: round.cards + 1 }, (_, value) => {
-    const exceedsTotal = !isLast && (othersTotal + value > round.cards);
-    const notRemaining = isLast && value !== remaining;
-    const disabled = exceedsTotal || notRemaining || remaining < 0;
-    return `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-trick-value="${value}" ${disabled ? "disabled" : ""}>${value}</button>`;
-  }).join("");
-
-  const totalMessage = validation.valid
-    ? '<div class="success-box">Alle Stiche sind vollständig verteilt.</div>'
-    : total > round.cards
-      ? `<div class="warning-box">Es sind ${total - round.cards} Stiche zu viel eingetragen.</div>`
-      : `<div class="inline-notice">Noch ${round.cards - total} von ${round.cards} Stichen zu verteilen.</div>`;
+  const numberButtons = Array.from(
+    { length: round.cards + 1 },
+    (_, value) => `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-trick-value="${value}">${value}</button>`,
+  ).join("");
 
   wizardContent.innerHTML = `
     <div class="dialog-shell">
@@ -582,12 +571,7 @@ function renderTrickWizard() {
         <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
         <div class="bid-context"><span>Ansage: ${round.bids[player.id]}</span><span>${Number.isInteger(selected) ? (selected === round.bids[player.id] ? `Treffer · +${predictedPoints}` : `Daneben · ${predictedPoints}`) : "Ergebnis wählen"}</span></div>
         <div class="number-grid">${numberButtons}</div>
-        <div class="total-panel">
-          <div class="total-stat"><strong>${total}</strong><span>Stiche eingetragen</span></div>
-          <div class="total-stat"><strong>${round.cards}</strong><span>Stiche vorhanden</span></div>
-        </div>
-        ${totalMessage}
-        ${isLast && remaining >= 0 && remaining <= round.cards ? `<div class="inline-notice">Für ${escapeHtml(player.name)} bleiben automatisch <strong>${remaining}</strong> Stiche übrig.</div>` : ""}
+        <div class="inline-notice">Trage das tatsächliche Ergebnis ein. Bei der Auswertung ist kein Wert gesperrt oder automatisch vorgegeben.</div>
         <ul class="previous-values">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
       </div>
       <div class="dialog-footer three">
@@ -655,7 +639,7 @@ function renderRoundEditor() {
 
   const issues = [
     !bidValidation.valid ? `Ansagen gesamt: ${bidValidation.total}. Die Summe darf nicht genau ${round.cards} sein.` : "",
-    !trickValidation.valid ? `Gemachte Stiche: ${trickValidation.total}. Die Summe muss genau ${round.cards} sein.` : "",
+    !trickValidation.valid ? "Bitte für jeden Spieler das tatsächliche Ergebnis eintragen." : "",
   ].filter(Boolean).join(" ");
 
   editContent.innerHTML = `

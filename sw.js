@@ -1,4 +1,4 @@
-const CACHE_NAME = "aufzug-v16";
+const CACHE_NAME = "bruno-v17";
 const APP_FILES = [
   "./",
   "./index.html",

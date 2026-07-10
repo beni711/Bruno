@@ -117,7 +117,7 @@ export function createGame(playerNames, options = {}) {
   }
 
   const now = options.now ?? new Date().toISOString();
-  const gameId = options.gameId ?? `aufzug-${Date.now().toString(36)}`;
+  const gameId = options.gameId ?? `bruno-${Date.now().toString(36)}`;
   const profileIds = Array.isArray(options.profileIds) && options.profileIds.length === cleanedNames.length
     ? options.profileIds
     : cleanedNames.map((name) => `name:${name.toLocaleLowerCase("de-DE")}`);

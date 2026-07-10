@@ -1578,8 +1578,16 @@ dialog::backdrop {
   }
 
   .setup-panel.many-players .roster-chip {
-    min-height: 38px;
-    padding: 0 9px;
+    min-height: 34px;
+    padding: 0 8px;
+  }
+
+  .setup-panel.many-players .fixed-roster {
+    margin-bottom: 8px;
+  }
+
+  .setup-panel.many-players .roster-chips {
+    gap: 4px;
   }
 
   .setup-panel.many-players .player-row {

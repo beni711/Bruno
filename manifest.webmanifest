@@ -1,7 +1,7 @@
 {
-  "name": "Aufzug – Spielleiter",
-  "short_name": "Aufzug",
-  "description": "Ansagen, Stiche und Punkte beim Kartenspiel Aufzug zählen.",
+  "name": "Bruno – Spielleiter",
+  "short_name": "Bruno",
+  "description": "Ansagen, Stiche und Punkte beim Kartenspiel Bruno zählen.",
   "lang": "de-DE",
   "start_url": "./",
   "scope": "./",

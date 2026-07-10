@@ -16,13 +16,29 @@ import {
   winnersForGame,
 } from "./game-core.js";
 
-const STORAGE_KEY = "aufzug.game.v1";
-const SETUP_KEY = "aufzug.setup.v1";
-const ARCHIVE_KEY = "aufzug.archive.v1";
-const ACCESS_SESSION_KEY = "aufzug.access.unlocked.v1";
-const ACCESS_CODE_DIGEST = "35e52331b7fb9acc6006ffeb9f8226f8ed738c2b896032ab1a241da41694076e";
-const ACCESS_CODE_SALT = "aufzug-shared-code-v1:";
-const FIXED_PLAYERS = ["BP", "MR", "MA", "TB", "TS", "KS", "KK"];
+const STORAGE_KEY = "bruno.game.v1";
+const SETUP_KEY = "bruno.setup.v1";
+const ARCHIVE_KEY = "bruno.archive.v1";
+const ACCESS_SESSION_KEY = "bruno.access.unlocked.v1";
+const ACCESS_CODE_DIGEST = "5e92aa39e70cb2253bcd77f2b0000e9a764124460c48e8fffc7457f7d7b880d4";
+const ACCESS_CODE_SALT = "bruno-shared-code-v1:";
+const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
+const LEGACY_STORAGE_KEYS = {
+  game: "aufzug.game.v1",
+  setup: "aufzug.setup.v1",
+  archive: "aufzug.archive.v1",
+  access: "aufzug.access.unlocked.v1",
+};
+const LEGACY_ACCESS_DIGEST = "35e52331b7fb9acc6006ffeb9f8226f8ed738c2b896032ab1a241da41694076e";
+const LEGACY_PLAYER_NAMES = new Map([
+  ["bp", "Beni"],
+  ["mr", "Kevin"],
+  ["ma", "Keven"],
+  ["tb", "Tobi B."],
+  ["ts", "Tobi S."],
+  ["ks", "Max"],
+  ["kk", "Michi"],
+]);
 const PENALTY_LABELS = {
   notTrump: "Nicht Trumpf gespielt",
   tooEarly: "Zu früh gespielt",
@@ -94,7 +110,12 @@ function clonePenalties(penalties = {}) {
 
 function readSessionUnlock() {
   try {
-    return sessionStorage.getItem(ACCESS_SESSION_KEY) === ACCESS_CODE_DIGEST;
+    if (sessionStorage.getItem(ACCESS_SESSION_KEY) === ACCESS_CODE_DIGEST) return true;
+    if (sessionStorage.getItem(LEGACY_STORAGE_KEYS.access) === LEGACY_ACCESS_DIGEST) {
+      sessionStorage.setItem(ACCESS_SESSION_KEY, ACCESS_CODE_DIGEST);
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -108,8 +129,11 @@ async function digestAccessCode(code) {
 
 function loadArchive() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(ARCHIVE_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((entry) => isGameShapeValid(entry) && entry.status === "finished") : [];
+    const raw = localStorage.getItem(ARCHIVE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEYS.archive) ?? "[]";
+    const parsed = JSON.parse(raw);
+    const migrated = Array.isArray(parsed) ? parsed.map(migrateGameRoster) : [];
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(migrated));
+    return migrated.filter((entry) => isGameShapeValid(entry) && entry.status === "finished");
   } catch {
     return [];
   }
@@ -128,7 +152,21 @@ function normalizedProfileId(name) {
 
 function canonicalPlayerName(name) {
   const cleaned = String(name).trim();
-  return FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE")) ?? cleaned;
+  const migrated = LEGACY_PLAYER_NAMES.get(cleaned.toLocaleLowerCase("de-DE")) ?? cleaned;
+  return FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === migrated.toLocaleLowerCase("de-DE")) ?? migrated;
+}
+
+function migrateGameRoster(savedGame) {
+  if (!savedGame || !Array.isArray(savedGame.players)) return savedGame;
+  for (const player of savedGame.players) {
+    const migratedName = canonicalPlayerName(player.name);
+    const oldProfileName = String(player.profileId ?? "").replace(/^fixed:/, "");
+    const profileName = LEGACY_PLAYER_NAMES.get(oldProfileName.toLocaleLowerCase("de-DE"));
+    player.name = migratedName;
+    if (profileName) player.profileId = normalizedProfileId(profileName);
+    else if (FIXED_PLAYERS.includes(migratedName)) player.profileId = normalizedProfileId(migratedName);
+  }
+  return savedGame;
 }
 
 function normalizeSetupPlayers(players) {
@@ -156,12 +194,13 @@ function archiveCompletedGame(completedGame) {
 
 function loadSavedGame() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEYS.game);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    const parsed = migrateGameRoster(JSON.parse(raw));
     if (isGameShapeValid(parsed) && !Number.isInteger(parsed.startingDealerIndex)) {
       parsed.startingDealerIndex = parsed.rounds[0]?.dealerIndex ?? 0;
     }
+    if (isGameShapeValid(parsed)) localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
     return isGameShapeValid(parsed) ? parsed : null;
   } catch {
     return null;
@@ -170,13 +209,16 @@ function loadSavedGame() {
 
 function loadSetupState() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(SETUP_KEY) ?? "[]");
+    const raw = localStorage.getItem(SETUP_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEYS.setup) ?? "[]";
+    const parsed = JSON.parse(raw);
     const players = normalizeSetupPlayers(Array.isArray(parsed) ? parsed : parsed.players);
     const requestedMixer = Array.isArray(parsed) ? null : canonicalPlayerName(parsed.startingMixerName ?? "");
-    return {
+    const migrated = {
       players,
       startingMixerName: players.includes(requestedMixer) ? requestedMixer : (players[0] ?? null),
     };
+    localStorage.setItem(SETUP_KEY, JSON.stringify(migrated));
+    return migrated;
   } catch {
     return { players: [], startingMixerName: null };
   }
@@ -215,9 +257,9 @@ function gameId() {
   if (globalThis.crypto?.getRandomValues) {
     const values = new Uint32Array(4);
     globalThis.crypto.getRandomValues(values);
-    return `aufzug-${Array.from(values, (value) => value.toString(36)).join("")}`;
+    return `bruno-${Array.from(values, (value) => value.toString(36)).join("")}`;
   }
-  return `aufzug-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `bruno-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function showToast(message) {
@@ -246,7 +288,7 @@ function brandMarkup(withMenu = false) {
             <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
           </svg>
         </span>
-        <span>Aufzug</span>
+        <span>Bruno</span>
       </div>
       ${withMenu
         ? '<button class="icon-button" type="button" data-action="open-menu" aria-label="Partie-Menü öffnen">•••</button>'
@@ -597,7 +639,7 @@ function buildLegacyGamePdf() {
   const pageStreams = pageRows.map((pageRowsForDocument, pageIndex) => {
     const commands = ["1 g", `0 0 ${pageWidth} ${pageHeight} re f`, "0 g", "0.18 w", "0.12 0.23 0.20 RG"];
     const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(game.createdAt));
-    text(commands, "Aufzug - Spielprotokoll", margin, pageHeight - 28, 13);
+    text(commands, "Bruno - Spielprotokoll", margin, pageHeight - 28, 13);
     text(commands, pdfTruncate(`Beginn: ${date} | Spieler: ${game.players.map((player) => player.name).join(", ")}`, 160), margin, pageHeight - 41, 7);
     text(commands, "DIN A4 quer - Punkte | Ansage | gemacht | Strafen", pageWidth - margin - 204, pageHeight - 28, 7);
 
@@ -836,7 +878,7 @@ function openGamePdf() {
   if (!opened) {
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Aufzug-Spielprotokoll_${new Date().toISOString().slice(0, 10)}.pdf`;
+    link.download = `Bruno-Spielprotokoll_${new Date().toISOString().slice(0, 10)}.pdf`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -1367,7 +1409,7 @@ function renderRoundEditor() {
 
 function exportGame() {
   const backup = {
-    type: "aufzug-full-backup",
+    type: "bruno-full-backup",
     backupVersion: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     activeGame: game,
@@ -1383,7 +1425,7 @@ function exportGame() {
   const date = new Date().toISOString().slice(0, 10);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `Aufzug-Gesamtsicherung_${date}.json`;
+  link.download = `Bruno-Gesamtsicherung_${date}.json`;
   document.body.append(link);
   link.click();
   link.remove();
@@ -1407,9 +1449,10 @@ function mergeArchivedGames(incomingGames) {
 async function importGameFromFile(file) {
   try {
     const parsed = JSON.parse(await file.text());
-    if (parsed?.type === "aufzug-full-backup") {
-      const incomingActive = parsed.activeGame;
-      const incomingArchive = Array.isArray(parsed.archivedGames) ? parsed.archivedGames : [];
+    const migratedStandalone = migrateGameRoster(parsed);
+    if (parsed?.type === "bruno-full-backup" || parsed?.type === "aufzug-full-backup") {
+      const incomingActive = migrateGameRoster(parsed.activeGame);
+      const incomingArchive = Array.isArray(parsed.archivedGames) ? parsed.archivedGames.map(migrateGameRoster) : [];
       if (incomingActive && !isGameShapeValid(incomingActive)) throw new Error("Die laufende Partie in der Sicherung ist ungültig.");
       if (!incomingArchive.every((entry) => isGameShapeValid(entry) && entry.status === "finished")) throw new Error("Das Spielearchiv in der Sicherung ist ungültig.");
       if (game && incomingActive && !window.confirm("Die aktuelle Partie durch die laufende Partie aus der Sicherung ersetzen?")) return;
@@ -1427,17 +1470,17 @@ async function importGameFromFile(file) {
         setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
         persistSetup();
       }
-    } else if (isGameShapeValid(parsed)) {
-      if (parsed.status === "finished") {
-        archiveCompletedGame(parsed);
+    } else if (isGameShapeValid(migratedStandalone)) {
+      if (migratedStandalone.status === "finished") {
+        archiveCompletedGame(migratedStandalone);
       } else {
         if (game && !window.confirm("Die aktuelle Partie durch die Sicherung ersetzen?")) return;
-        game = parsed;
+        game = migratedStandalone;
         if (!Number.isInteger(game.startingDealerIndex)) game.startingDealerIndex = game.rounds[0]?.dealerIndex ?? 0;
         persistGame();
       }
     } else {
-      throw new Error("Diese Datei enthält keine gültige Aufzug-Sicherung.");
+      throw new Error("Diese Datei enthält keine gültige Bruno-Sicherung.");
     }
     closeDialog(menuDialog);
     closeDialog(statsDialog);
@@ -1471,6 +1514,7 @@ function requestNewGame() {
 function lockApp() {
   try {
     sessionStorage.removeItem(ACCESS_SESSION_KEY);
+    sessionStorage.removeItem(LEGACY_STORAGE_KEYS.access);
   } catch {}
   appUnlocked = false;
   accessError = "";
@@ -1493,7 +1537,7 @@ function startRematch() {
 
 async function copyResult() {
   const sorted = scoreboardForGame(game).sort((a, b) => b.score - a.score || a.seatIndex - b.seatIndex);
-  const lines = ["Aufzug – Endstand", ...sorted.map((entry, index) => `${index + 1}. ${entry.name}: ${entry.score} Punkte`)];
+  const lines = ["Bruno – Endstand", ...sorted.map((entry, index) => `${index + 1}. ${entry.name}: ${entry.score} Punkte`)];
   try {
     await navigator.clipboard.writeText(lines.join("\n"));
     showToast("Endstand wurde kopiert.");

@@ -1,8 +1,8 @@
-# Aufzug – Spielleiter
+# Bruno – Spielleiter
 
-Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten beim Kartenspiel **Aufzug**.
+Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten beim Kartenspiel **Bruno**.
 
-Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf demselben Gerät, feste Spieler (`BP`, `MR`, `MA`, `TB`, `TS`, `KS`, `KK`), frei ergänzbare Gäste und eine Langzeitstatistik aller abgeschlossenen Partien.
+Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf demselben Gerät, die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, frei ergänzbare Gäste und eine Langzeitstatistik aller abgeschlossenen Partien.
 
 ## Enthaltene Regeln
 
@@ -18,7 +18,7 @@ Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf 
 
 ## Spielprotokoll
 
-Unter dem Punktestand öffnet **Details** ein schlichtes Rundenprotokoll wie auf dem Spielzettel: Kartenanzahl links, Spieler-Kürzel oben, Ansage und laufender Punktestand je Spieler. Richtige Ansagen sind grün hinterlegt; Strafen stehen ganz rechts. Über **PDF öffnen** wird die gesamte Partie kompakt auf einer DIN-A4-Seite im Querformat bereitgestellt.
+Unter dem Punktestand öffnet **Details** ein schlichtes Rundenprotokoll wie auf dem Spielzettel: Kartenanzahl links, Spieler-Kürzel oben, Ansage und laufender Punktestand je Spieler. Richtige Ansagen sind grün hinterlegt; Strafen stehen rechts. Über **PDF öffnen** wird die gesamte Partie kompakt auf einer DIN-A4-Seite im Hochformat bereitgestellt. In der Schlusszeile stehen die Zahlbeträge; der Sieger erhält eine Krone und nicht mitspielende feste Spieler zahlen den Durchschnitt.
 
 ## Lokal starten
 

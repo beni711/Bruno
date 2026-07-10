@@ -102,9 +102,9 @@ test("ausgewählter erster Mischer wird im Spiel gespeichert und rotiert", () =>
 });
 
 test("dauerhafte Spielerprofile werden in die Partie übernommen", () => {
-  const game = createGame(["BP", "MR", "Gast"], {
+  const game = createGame(["Beni", "Kevin", "Gast"], {
     gameId: "profile-test",
-    profileIds: ["fixed:bp", "fixed:mr", "guest:gast"],
+    profileIds: ["fixed:beni", "fixed:kevin", "guest:gast"],
   });
-  assert.deepEqual(game.players.map((player) => player.profileId), ["fixed:bp", "fixed:mr", "guest:gast"]);
+  assert.deepEqual(game.players.map((player) => player.profileId), ["fixed:beni", "fixed:kevin", "guest:gast"]);
 });

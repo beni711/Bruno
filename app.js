@@ -671,18 +671,19 @@ function buildGamePdf() {
   const pageWidth = 842;
   const pageHeight = 595;
   const margin = 20;
-  const cardWidth = 38;
-  const penaltyWidth = 94;
+  const cardWidth = 32;
+  const penaltyWidth = 100;
   const pairedColumns = game.players.length <= 6;
-  const playerSlots = pairedColumns ? game.players.length * 2 : game.players.length;
-  const slotWidth = (pageWidth - (margin * 2) - cardWidth - penaltyWidth) / playerSlots;
+  const bidWidth = pairedColumns ? 26 : 46;
+  const scoreWidth = pairedColumns ? 34 : 0;
+  const playerWidth = bidWidth + scoreWidth;
   const rounds = roundsForDetailDocument();
   const scores = scoreboardForGame(game).sort((a, b) => a.seatIndex - b.seatIndex);
   const rows = [...rounds.map((round) => ({ type: "round", round })), { type: "total" }];
   const top = 574;
   const headerHeight = 16;
   const rowHeight = Math.max(18, Math.min(25, Math.floor((top - 18 - headerHeight) / rows.length)));
-  const valueFont = pairedColumns ? 6.1 : 5.3;
+  const valueFont = pairedColumns ? 6.4 : 5.8;
   const commands = ["1 g", `0 0 ${pageWidth} ${pageHeight} re f`, "0 g", "0.16 w", "0.12 0.23 0.20 RG"];
   const text = (value, x, y, size) => commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${pdfSafeText(value)}) Tj ET`);
   const centeredText = (value, x, width, y, size) => {
@@ -690,31 +691,45 @@ function buildGamePdf() {
     text(value, x + Math.max(2, (width - estimatedWidth) / 2), y, size);
   };
   const line = (x1, y1, x2, y2) => commands.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
-  const tableWidth = pageWidth - (margin * 2);
   const tableBottom = top - headerHeight - (rows.length * rowHeight);
   const playerStart = margin + cardWidth;
-  const penaltiesStart = pageWidth - margin - penaltyWidth;
+  const playerEnd = playerStart + (game.players.length * playerWidth);
+  const penaltiesStart = Math.max(playerEnd + 22, pageWidth - margin - penaltyWidth);
 
-  commands.push("0.92 g", `${margin} ${top - headerHeight} ${tableWidth} ${headerHeight} re f`, "0 g");
+  commands.push(
+    "0.92 g",
+    `${margin} ${top - headerHeight} ${playerEnd - margin} ${headerHeight} re f`,
+    `${penaltiesStart} ${top - headerHeight} ${penaltyWidth} ${headerHeight} re f`,
+    "0 g",
+  );
   centeredText("Karte", margin, cardWidth, top - 11, 7);
   game.players.forEach((player, index) => {
-    const x = playerStart + ((pairedColumns ? index * 2 : index) * slotWidth);
-    const width = pairedColumns ? slotWidth * 2 : slotWidth;
-    centeredText(initials(player.name), x, width, top - 11, 7);
+    centeredText(initials(player.name), playerStart + (index * playerWidth), playerWidth, top - 11, 7);
   });
   centeredText("Strafen", penaltiesStart, penaltyWidth, top - 11, 7);
-  line(margin, top, pageWidth - margin, top);
-  line(margin, top - headerHeight, pageWidth - margin, top - headerHeight);
+  line(margin, top, playerEnd, top);
+  line(penaltiesStart, top, pageWidth - margin, top);
+  line(margin, top - headerHeight, playerEnd, top - headerHeight);
+  line(penaltiesStart, top - headerHeight, pageWidth - margin, top - headerHeight);
+  line(margin, top, margin, tableBottom);
   line(playerStart, top, playerStart, tableBottom);
-  for (let index = 1; index <= playerSlots; index += 1) {
-    line(playerStart + (index * slotWidth), top, playerStart + (index * slotWidth), tableBottom);
+  for (let index = 1; index <= game.players.length; index += 1) {
+    const x = playerStart + (index * playerWidth);
+    if (pairedColumns) line(x - scoreWidth, top - headerHeight, x - scoreWidth, tableBottom);
+    line(x, top, x, tableBottom);
   }
   line(penaltiesStart, top, penaltiesStart, tableBottom);
+  line(pageWidth - margin, top, pageWidth - margin, tableBottom);
 
   let y = top - headerHeight;
   rows.forEach((entry) => {
     const total = entry.type === "total";
-    if (total) commands.push("0.94 g", `${margin} ${y - rowHeight} ${tableWidth} ${rowHeight} re f`, "0 g");
+    if (total) commands.push(
+      "0.94 g",
+      `${margin} ${y - rowHeight} ${playerEnd - margin} ${rowHeight} re f`,
+      `${penaltiesStart} ${y - rowHeight} ${penaltyWidth} ${rowHeight} re f`,
+      "0 g",
+    );
     if (total) {
       centeredText("Gesamt", margin, cardWidth, y - (rowHeight * 0.62), 6.6);
     } else {
@@ -722,10 +737,10 @@ function buildGamePdf() {
     }
 
     game.players.forEach((player, index) => {
-      const playerX = playerStart + ((pairedColumns ? index * 2 : index) * slotWidth);
+      const playerX = playerStart + (index * playerWidth);
       if (total) {
         const totalText = String(scores[index].score);
-        centeredText(totalText, playerX, pairedColumns ? slotWidth * 2 : slotWidth, y - (rowHeight * 0.62), valueFont + 0.5);
+        centeredText(totalText, playerX, playerWidth, y - (rowHeight * 0.62), valueFont + 0.5);
         return;
       }
       const bid = entry.round.bids?.[player.id];
@@ -733,19 +748,20 @@ function buildGamePdf() {
       const runningScore = runningScoreAfterRound(game.rounds.indexOf(entry.round), player.id);
       const hit = Number.isInteger(bid) && bid === tricks;
       if (pairedColumns) {
-        if (hit) commands.push("0.85 0.94 0.89 rg", `${playerX + 1} ${y - rowHeight + 1} ${slotWidth - 2} ${rowHeight - 2} re f`, "0 g");
-        centeredText(Number.isInteger(bid) ? String(bid) : "-", playerX, slotWidth, y - (rowHeight * 0.62), valueFont + 0.5);
-        centeredText(String(runningScore), playerX + slotWidth, slotWidth, y - (rowHeight * 0.62), valueFont + 0.5);
+        if (hit) commands.push("0.85 0.94 0.89 rg", `${playerX + 1} ${y - rowHeight + 1} ${bidWidth - 2} ${rowHeight - 2} re f`, "0 g");
+        centeredText(Number.isInteger(bid) ? String(bid) : "-", playerX, bidWidth, y - (rowHeight * 0.62), valueFont + 0.5);
+        centeredText(String(runningScore), playerX + bidWidth, scoreWidth, y - (rowHeight * 0.62), valueFont + 0.5);
       } else {
-        if (hit) commands.push("0.85 0.94 0.89 rg", `${playerX + 1} ${y - rowHeight + 1} ${slotWidth - 2} ${rowHeight - 2} re f`, "0 g");
-        centeredText(`${Number.isInteger(bid) ? bid : "-"}/${runningScore}`, playerX, slotWidth, y - (rowHeight * 0.62), valueFont);
+        if (hit) commands.push("0.85 0.94 0.89 rg", `${playerX + 1} ${y - rowHeight + 1} ${playerWidth - 2} ${rowHeight - 2} re f`, "0 g");
+        centeredText(`${Number.isInteger(bid) ? bid : "-"}/${runningScore}`, playerX, playerWidth, y - (rowHeight * 0.62), valueFont);
       }
     });
     if (!total) {
       const penaltyText = penaltyEntriesForRound(entry.round).join(" | ");
       text(pdfTruncate(penaltyText, Math.max(5, Math.floor(penaltyWidth / 4.2))), penaltiesStart + 3, y - (rowHeight * 0.62), 5.4);
     }
-    line(margin, y - rowHeight, pageWidth - margin, y - rowHeight);
+    line(margin, y - rowHeight, playerEnd, y - rowHeight);
+    line(penaltiesStart, y - rowHeight, pageWidth - margin, y - rowHeight);
     y -= rowHeight;
   });
 

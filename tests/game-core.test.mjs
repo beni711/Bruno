@@ -9,6 +9,7 @@ import {
   maxCardsForPlayers,
   penaltyPointsForRound,
   pointsForRound,
+  restoreGameCollections,
   roundPoints,
   scoreboardForGame,
   validateBids,
@@ -107,4 +108,19 @@ test("dauerhafte Spielerprofile werden in die Partie übernommen", () => {
     profileIds: ["fixed:beni", "fixed:kevin", "guest:gast"],
   });
   assert.deepEqual(game.players.map((player) => player.profileId), ["fixed:beni", "fixed:kevin", "guest:gast"]);
+});
+
+test("von Firebase entfernte leere Rundendaten werden beim Laden wiederhergestellt", () => {
+  const game = createGame(["Beni", "Kevin", "Max"], { gameId: "firebase-test" });
+  delete game.rounds[0].bids;
+  delete game.rounds[0].tricks;
+  delete game.rounds[0].penalties;
+
+  restoreGameCollections(game);
+
+  assert.deepEqual(game.rounds[0].bids, {});
+  assert.deepEqual(game.rounds[0].tricks, {});
+  assert.deepEqual(game.rounds[0].penalties, {});
+  game.rounds[0].bids.p1 = 0;
+  assert.equal(game.rounds[0].bids.p1, 0);
 });

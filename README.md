@@ -35,4 +35,4 @@ Der gesamte Ordner kann auf einem statischen HTTPS-Webspace wie GitHub Pages ver
 
 ## Datenschutz und Sicherung
 
-Spielstand, Spielernamen, Auswahl und Spielarchiv werden unter der Sitzung `111111` in der Firebase Realtime Database gespeichert. Eine lokale Kopie bleibt als Offline-Ausfallsicherung bestehen. Über **Menü → Gesamtsicherung exportieren** lassen sich laufende Partie, Spielarchiv und Spielerauswahl zusätzlich als JSON-Datei sichern und wieder importieren. Die empfohlenen Datenbankregeln stehen in `firebase-rules.json`.
+Spielstand, Spielernamen, Auswahl und Spielarchiv werden unter der Sitzung `111111` in der Firebase Realtime Database gespeichert. Eine lokale Kopie bleibt als Offline-Ausfallsicherung bestehen. Beim Laden auf einem neuen Gerät stellt die App von Firebase entfernte leere Rundendaten automatisch wieder her. Über **Menü → Gesamtsicherung exportieren** lassen sich laufende Partie, Spielarchiv und Spielerauswahl zusätzlich als JSON-Datei sichern und wieder importieren. Die empfohlenen Datenbankregeln stehen in `firebase-rules.json`.

@@ -98,41 +98,6 @@ h3 {
   font-size: 1.12rem;
 }
 
-.brand-group {
-  display: grid;
-  gap: 2px;
-}
-
-.online-status {
-  padding-left: 53px;
-  color: var(--muted);
-  font-size: 0.62rem;
-  font-weight: 720;
-  line-height: 1;
-}
-
-.online-status::before {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 5px;
-  border-radius: 50%;
-  background: var(--gold);
-  content: "";
-}
-
-.online-status[data-state="saved"]::before {
-  background: #2b9a68;
-}
-
-.online-status[data-state="offline"] {
-  color: var(--red);
-}
-
-.online-status[data-state="offline"]::before {
-  background: var(--red);
-}
-
 .brand-mark {
   display: grid;
   width: 42px;

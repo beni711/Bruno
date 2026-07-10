@@ -153,6 +153,17 @@ export function createGame(playerNames, options = {}) {
   };
 }
 
+export function restoreGameCollections(game) {
+  if (!game || !Array.isArray(game.rounds)) return game;
+  for (const round of game.rounds) {
+    for (const key of ["bids", "tricks", "penalties"]) {
+      const value = round?.[key];
+      round[key] = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    }
+  }
+  return game;
+}
+
 export function penaltyPointsForRound(round, playerId) {
   const penalties = round?.penalties?.[playerId] ?? {};
   return -(

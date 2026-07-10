@@ -8,6 +8,7 @@ import {
   isGameShapeValid,
   penaltyPointsForRound,
   pointsForRound,
+  restoreGameCollections,
   roundPoints,
   scoreboardForGame,
   sumValues,
@@ -137,22 +138,8 @@ function readDeviceId() {
   }
 }
 
-function onlineStatusText() {
-  const labels = {
-    connecting: `${ONLINE_SESSION_CODE} · verbindet`,
-    saving: `${ONLINE_SESSION_CODE} · speichert`,
-    saved: `${ONLINE_SESSION_CODE} · online`,
-    offline: `${ONLINE_SESSION_CODE} · nur lokal`,
-  };
-  return labels[onlineStatus] ?? labels.connecting;
-}
-
 function setOnlineStatus(status) {
   onlineStatus = status;
-  document.querySelectorAll("[data-online-status]").forEach((element) => {
-    element.textContent = onlineStatusText();
-    element.dataset.state = status;
-  });
 }
 
 function remoteSetupSnapshot() {
@@ -399,6 +386,7 @@ function canonicalPlayerName(name) {
 }
 
 function migrateGameRoster(savedGame) {
+  restoreGameCollections(savedGame);
   if (!savedGame || !Array.isArray(savedGame.players)) return savedGame;
   for (const player of savedGame.players) {
     const migratedName = canonicalPlayerName(player.name);
@@ -528,17 +516,14 @@ function closeDialog(dialog) {
 function brandMarkup(withMenu = false) {
   return `
     <header class="topbar">
-      <div class="brand-group">
-        <div class="brand">
-          <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m12 3-4 4h2v4h4V7h2l-4-4Z"></path>
-              <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
-            </svg>
-          </span>
-          <span>Bruno</span>
-        </div>
-        ${appUnlocked ? `<span class="online-status" data-online-status data-state="${onlineStatus}">${onlineStatusText()}</span>` : ""}
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3-4 4h2v4h4V7h2l-4-4Z"></path>
+            <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
+          </svg>
+        </span>
+        <span>Bruno</span>
       </div>
       ${withMenu
         ? '<button class="icon-button" type="button" data-action="open-menu" aria-label="Partie-Menü öffnen">•••</button>'

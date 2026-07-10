@@ -26,9 +26,11 @@ test("Rundenfolge enthält den Höchstwert genau einmal", () => {
   assert.deepEqual(buildRoundSchedule(6), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
 });
 
-test("Geber sagt zuletzt an und rotiert", () => {
+test("Mischer rotiert und die Person danach beginnt die Ansage", () => {
   assert.deepEqual(biddingOrderForRound(0, 5), [1, 2, 3, 4, 0]);
   assert.deepEqual(biddingOrderForRound(1, 5), [2, 3, 4, 0, 1]);
+  assert.deepEqual(biddingOrderForRound(0, 5, 2), [3, 4, 0, 1, 2]);
+  assert.deepEqual(biddingOrderForRound(3, 5, 2), [1, 2, 3, 4, 0]);
 });
 
 test("Ansagensumme darf nicht der Anzahl möglicher Stiche entsprechen", () => {
@@ -62,4 +64,22 @@ test("Gesamtstand und Gleichstand werden korrekt ermittelt", () => {
   const scores = scoreboardForGame(game);
   assert.deepEqual(scores.map((entry) => entry.score), [10, -2, -2]);
   assert.deepEqual(winnersForGame(game).map((entry) => entry.name), ["Anna"]);
+});
+
+test("ausgewählter erster Mischer wird im Spiel gespeichert und rotiert", () => {
+  const game = createGame(["Anna", "Ben", "Cem"], {
+    gameId: "mischer-test",
+    now: "2026-07-10T00:00:00.000Z",
+    startingDealerIndex: 2,
+  });
+  assert.equal(game.startingDealerIndex, 2);
+  assert.deepEqual(game.rounds.slice(0, 4).map((round) => round.dealerIndex), [2, 0, 1, 2]);
+});
+
+test("dauerhafte Spielerprofile werden in die Partie übernommen", () => {
+  const game = createGame(["BP", "MR", "Gast"], {
+    gameId: "profile-test",
+    profileIds: ["fixed:bp", "fixed:mr", "guest:gast"],
+  });
+  assert.deepEqual(game.players.map((player) => player.profileId), ["fixed:bp", "fixed:mr", "guest:gast"]);
 });

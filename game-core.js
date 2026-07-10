@@ -20,15 +20,18 @@ export function buildRoundSchedule(playerCount) {
   return [...ascending, ...descending];
 }
 
-export function dealerForRound(roundIndex, playerCount) {
+export function dealerForRound(roundIndex, playerCount, startingDealerIndex = 0) {
   if (!Number.isInteger(roundIndex) || roundIndex < 0) {
     throw new RangeError("Die Rundennummer muss positiv sein.");
   }
-  return roundIndex % playerCount;
+  if (!Number.isInteger(startingDealerIndex) || startingDealerIndex < 0 || startingDealerIndex >= playerCount) {
+    throw new RangeError("Der erste Mischer ist ungültig.");
+  }
+  return (startingDealerIndex + roundIndex) % playerCount;
 }
 
-export function biddingOrderForRound(roundIndex, playerCount) {
-  const dealerIndex = dealerForRound(roundIndex, playerCount);
+export function biddingOrderForRound(roundIndex, playerCount, startingDealerIndex = 0) {
+  const dealerIndex = dealerForRound(roundIndex, playerCount, startingDealerIndex);
   return Array.from(
     { length: playerCount },
     (_, offset) => (dealerIndex + 1 + offset) % playerCount,
@@ -91,7 +94,18 @@ export function createGame(playerNames, options = {}) {
 
   const now = options.now ?? new Date().toISOString();
   const gameId = options.gameId ?? `aufzug-${Date.now().toString(36)}`;
-  const players = cleanedNames.map((name, index) => ({ id: `p${index + 1}`, name }));
+  const profileIds = Array.isArray(options.profileIds) && options.profileIds.length === cleanedNames.length
+    ? options.profileIds
+    : cleanedNames.map((name) => `name:${name.toLocaleLowerCase("de-DE")}`);
+  const players = cleanedNames.map((name, index) => ({
+    id: `p${index + 1}`,
+    profileId: String(profileIds[index]),
+    name,
+  }));
+  const startingDealerIndex = options.startingDealerIndex ?? 0;
+  if (!Number.isInteger(startingDealerIndex) || startingDealerIndex < 0 || startingDealerIndex >= players.length) {
+    throw new RangeError("Bitte einen gültigen ersten Mischer auswählen.");
+  }
   const schedule = buildRoundSchedule(players.length);
 
   return {
@@ -101,11 +115,12 @@ export function createGame(playerNames, options = {}) {
     updatedAt: now,
     status: "active",
     currentRoundIndex: 0,
+    startingDealerIndex,
     players,
     rounds: schedule.map((cards, index) => ({
       number: index + 1,
       cards,
-      dealerIndex: dealerForRound(index, players.length),
+      dealerIndex: dealerForRound(index, players.length, startingDealerIndex),
       phase: "bidding",
       bids: {},
       tricks: {},

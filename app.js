@@ -16,6 +16,12 @@ import {
 
 const STORAGE_KEY = "aufzug.game.v1";
 const SETUP_KEY = "aufzug.setup.v1";
+const ARCHIVE_KEY = "aufzug.archive.v1";
+const ACCESS_SESSION_KEY = "aufzug.access.unlocked.v1";
+const ACCESS_CODE_DIGEST = "35e52331b7fb9acc6006ffeb9f8226f8ed738c2b896032ab1a241da41694076e";
+const ACCESS_CODE_SALT = "aufzug-shared-code-v1:";
+const FIXED_PLAYERS = ["BP", "MR", "MA", "TB", "TS", "KS", "KK"];
+const BACKUP_VERSION = 2;
 
 const app = document.querySelector("#app");
 const wizardDialog = document.querySelector("#wizard-dialog");
@@ -24,15 +30,24 @@ const editDialog = document.querySelector("#edit-dialog");
 const editContent = document.querySelector("#edit-content");
 const menuDialog = document.querySelector("#menu-dialog");
 const helpDialog = document.querySelector("#help-dialog");
+const statsDialog = document.querySelector("#stats-dialog");
+const statsContent = document.querySelector("#stats-content");
 const importFile = document.querySelector("#import-file");
 const toast = document.querySelector("#toast");
 
 let game = loadSavedGame();
-let setupPlayers = game ? [] : loadSetupPlayers();
+let archivedGames = loadArchive();
+const savedSetup = loadSetupState();
+let setupPlayers = game ? [] : savedSetup.players;
+let setupStartingMixerName = game ? null : savedSetup.startingMixerName;
 let bidWizard = null;
 let trickWizard = null;
 let editDraft = null;
 let toastTimer = null;
+let accessError = "";
+let appUnlocked = readSessionUnlock();
+
+if (game?.status === "finished") archiveCompletedGame(game);
 
 function escapeHtml(value) {
   return String(value)
@@ -52,28 +67,87 @@ function pluralCards(cards) {
   return cards === 1 ? "Karte" : "Karten";
 }
 
+function readSessionUnlock() {
+  try {
+    return sessionStorage.getItem(ACCESS_SESSION_KEY) === ACCESS_CODE_DIGEST;
+  } catch {
+    return false;
+  }
+}
+
+async function digestAccessCode(code) {
+  const bytes = new TextEncoder().encode(`${ACCESS_CODE_SALT}${String(code).trim()}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function loadArchive() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ARCHIVE_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((entry) => isGameShapeValid(entry) && entry.status === "finished") : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistArchive() {
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archivedGames));
+}
+
+function normalizedProfileId(name) {
+  const cleaned = String(name).trim();
+  const fixed = FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"));
+  if (fixed) return `fixed:${fixed.toLocaleLowerCase("de-DE")}`;
+  return `guest:${encodeURIComponent(cleaned.toLocaleLowerCase("de-DE"))}`;
+}
+
+function archiveCompletedGame(completedGame) {
+  if (!completedGame || completedGame.status !== "finished") return;
+  const snapshot = structuredClone(completedGame);
+  snapshot.finishedAt ??= new Date().toISOString();
+  const existingIndex = archivedGames.findIndex((entry) => entry.gameId === snapshot.gameId);
+  if (existingIndex === -1) archivedGames.push(snapshot);
+  else archivedGames[existingIndex] = snapshot;
+  archivedGames.sort((a, b) => String(b.finishedAt ?? b.updatedAt).localeCompare(String(a.finishedAt ?? a.updatedAt)));
+  persistArchive();
+}
+
 function loadSavedGame() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    if (isGameShapeValid(parsed) && !Number.isInteger(parsed.startingDealerIndex)) {
+      parsed.startingDealerIndex = parsed.rounds[0]?.dealerIndex ?? 0;
+    }
     return isGameShapeValid(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function loadSetupPlayers() {
+function loadSetupState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SETUP_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.map((name) => String(name)).filter(Boolean).slice(0, MAX_PLAYERS) : [];
+    const players = (Array.isArray(parsed) ? parsed : parsed.players ?? [])
+      .map((name) => String(name))
+      .filter(Boolean)
+      .slice(0, MAX_PLAYERS);
+    const requestedMixer = Array.isArray(parsed) ? null : String(parsed.startingMixerName ?? "");
+    return {
+      players,
+      startingMixerName: players.includes(requestedMixer) ? requestedMixer : (players[0] ?? null),
+    };
   } catch {
-    return [];
+    return { players: [], startingMixerName: null };
   }
 }
 
 function persistSetup() {
-  localStorage.setItem(SETUP_KEY, JSON.stringify(setupPlayers));
+  localStorage.setItem(SETUP_KEY, JSON.stringify({
+    players: setupPlayers,
+    startingMixerName: setupStartingMixerName,
+  }));
 }
 
 function persistGame() {
@@ -92,6 +166,10 @@ function currentRound() {
 
 function playerIds() {
   return game.players.map((player) => player.id);
+}
+
+function biddingOrder(roundIndex) {
+  return biddingOrderForRound(roundIndex, game.players.length, game.startingDealerIndex ?? 0);
 }
 
 function gameId() {
@@ -137,7 +215,36 @@ function brandMarkup(withMenu = false) {
     </header>`;
 }
 
+function renderLock() {
+  app.innerHTML = `
+    ${brandMarkup(false)}
+    <main class="lock-main">
+      <section class="lock-card">
+        <span class="lock-symbol" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3-4 4h2v4h4V7h2l-4-4Z"></path>
+            <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
+          </svg>
+        </span>
+        <span class="eyebrow">Geschützte Spielrunde</span>
+        <h1>Gemeinsamen Code eingeben</h1>
+        <p>Danach wird eine laufende Partie auf diesem Gerät automatisch an derselben Stelle fortgesetzt.</p>
+        <form id="access-code-form" class="access-form">
+          <label class="sr-only" for="access-code-input">Gemeinsamer App-Code</label>
+          <input id="access-code-input" class="text-input access-input" name="accessCode" type="password" inputmode="numeric" autocomplete="current-password" placeholder="App-Code" autofocus>
+          ${accessError ? `<div class="warning-box">${escapeHtml(accessError)}</div>` : ""}
+          <button class="primary-button full-width" type="submit">App öffnen</button>
+        </form>
+        <small>Der Code schützt vor zufälligem Zugriff. Die Daten bleiben ausschließlich in diesem Browser gespeichert.</small>
+      </section>
+    </main>`;
+}
+
 function render() {
+  if (!appUnlocked) {
+    renderLock();
+    return;
+  }
   if (!game) {
     renderSetup();
     return;
@@ -153,20 +260,37 @@ function render() {
 
 function renderSetup() {
   const count = setupPlayers.length;
+  if (!setupPlayers.includes(setupStartingMixerName)) {
+    setupStartingMixerName = setupPlayers[0] ?? null;
+  }
   const canStart = count >= MIN_PLAYERS && count <= MAX_PLAYERS;
   const peak = canStart ? maxCardsForPlayers(count) : null;
   const totalRounds = peak ? (peak * 2) - 1 : null;
+  const mixerIndex = setupPlayers.indexOf(setupStartingMixerName);
+  const firstBidderName = count ? setupPlayers[(mixerIndex + 1) % count] : null;
 
-  const playerRows = setupPlayers.map((name, index) => `
-    <li class="player-row">
-      <span class="player-number">${index + 1}</span>
-      <span class="player-name">${escapeHtml(name)}</span>
-      <span class="row-actions">
-        <button class="mini-button" type="button" data-action="player-up" data-index="${index}" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach oben">↑</button>
-        <button class="mini-button" type="button" data-action="player-down" data-index="${index}" ${index === count - 1 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach unten">↓</button>
-        <button class="mini-button" type="button" data-action="player-remove" data-index="${index}" aria-label="${escapeHtml(name)} entfernen">×</button>
-      </span>
-    </li>`).join("");
+  const playerRows = setupPlayers.map((name, index) => {
+    const fixed = FIXED_PLAYERS.includes(name);
+    const details = [fixed ? "fester Spieler" : "Gast", name === setupStartingMixerName ? "mischt zuerst" : ""].filter(Boolean).join(" · ");
+    return `
+      <li class="player-row">
+        <span class="player-number">${index + 1}</span>
+        <span class="player-name">${escapeHtml(name)}<small class="${name === setupStartingMixerName ? "mixer-badge" : ""}">${details}</small></span>
+        <span class="row-actions">
+          <button class="mini-button" type="button" data-action="player-up" data-index="${index}" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach oben">↑</button>
+          <button class="mini-button" type="button" data-action="player-down" data-index="${index}" ${index === count - 1 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach unten">↓</button>
+          <button class="mini-button" type="button" data-action="player-remove" data-index="${index}" aria-label="${escapeHtml(name)} ${fixed ? "für heute abwählen" : "entfernen"}">×</button>
+        </span>
+      </li>`;
+  }).join("");
+
+  const mixerOptions = setupPlayers.map((name) => `
+    <option value="${escapeHtml(name)}" ${name === setupStartingMixerName ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
+
+  const fixedPlayerButtons = FIXED_PLAYERS.map((name) => {
+    const selected = setupPlayers.includes(name);
+    return `<button class="roster-chip ${selected ? "selected" : ""}" type="button" data-action="toggle-fixed-player" data-name="${name}" aria-pressed="${selected}">${name}<span>${selected ? "✓" : "+"}</span></button>`;
+  }).join("");
 
   app.innerHTML = `
     ${brandMarkup(false)}
@@ -185,15 +309,28 @@ function renderSetup() {
           </div>
         </div>
 
+        <div class="fixed-roster">
+          <span class="field-label">Fester Spielerkreis</span>
+          <p class="roster-help">Für den heutigen Spieltag an- oder abwählen.</p>
+          <div class="roster-chips">${fixedPlayerButtons}</div>
+        </div>
+
         <form id="add-player-form" class="player-add-form" autocomplete="off">
-          <label class="sr-only" for="player-name-input">Spielername</label>
-          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Name eingeben" ${count >= MAX_PLAYERS ? "disabled" : ""}>
-          <button class="secondary-button" type="submit" ${count >= MAX_PLAYERS ? "disabled" : ""}>Hinzufügen</button>
+          <label class="sr-only" for="player-name-input">Gastname</label>
+          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Gastname eingeben" ${count >= MAX_PLAYERS ? "disabled" : ""}>
+          <button class="secondary-button" type="submit" ${count >= MAX_PLAYERS ? "disabled" : ""}>Gast hinzufügen</button>
         </form>
 
         ${count
           ? `<ol class="player-list">${playerRows}</ol>`
           : '<div class="empty-players">Noch keine Spieler eingetragen.</div>'}
+
+        ${count ? `
+          <div class="mixer-picker">
+            <label for="starting-mixer-select">Wer mischt zuerst?</label>
+            <select id="starting-mixer-select" class="text-input">${mixerOptions}</select>
+            <p><strong>${escapeHtml(setupStartingMixerName)}</strong> mischt zuerst. Danach beginnt <strong>${escapeHtml(firstBidderName)}</strong> mit dem Ansagen.</p>
+          </div>` : ""}
 
         <div class="round-preview" aria-label="Spielübersicht">
           <div class="preview-stat"><strong>${count || "–"}</strong><span>Spieler</span></div>
@@ -201,8 +338,11 @@ function renderSetup() {
           <div class="preview-stat"><strong>${totalRounds ?? "–"}</strong><span>Spielrunden</span></div>
         </div>
 
-        <div class="setup-note">Die Reihenfolge ist die Sitzreihenfolge. Der erste Spieler ist zuerst Geber; danach wechselt der Geber jede Runde und sagt zuletzt an. Benötigt werden mindestens ${MIN_PLAYERS} Spieler.</div>
-        <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>Partie starten</button>
+        <div class="setup-note">Die Reihenfolge ist die Sitzreihenfolge. Der Mischer wechselt nach jeder Runde im Kreis. Die Person direkt danach beginnt mit dem Ansagen; der Mischer sagt zuletzt an.</div>
+        <div class="action-row">
+          <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>Partie starten</button>
+          <button class="secondary-button full-width" type="button" data-action="open-stats">Alle Spiele auswerten (${archivedGames.length})</button>
+        </div>
       </section>
     </main>`;
 }
@@ -231,12 +371,13 @@ function phaseCopy(round) {
 }
 
 function renderRoundPlayers(round) {
-  const order = biddingOrderForRound(game.currentRoundIndex, game.players.length);
+  const order = biddingOrder(game.currentRoundIndex);
   return order.map((playerIndex) => {
     const player = game.players[playerIndex];
     const bid = round.bids[player.id];
     const tricks = round.tricks[player.id];
     const isDealer = playerIndex === round.dealerIndex;
+    const startsBidding = playerIndex === order[0];
 
     if (round.phase === "result") {
       const points = roundPoints(round, player.id);
@@ -246,7 +387,7 @@ function renderRoundPlayers(round) {
           <span class="avatar">${escapeHtml(initials(player.name))}</span>
           <span class="round-player-main">
             <strong>${escapeHtml(player.name)}</strong>
-            <small>Ansage ${bid} · gemacht ${tricks}${isDealer ? " · Geber" : ""}</small>
+            <small>Ansage ${bid} · gemacht ${tricks}${isDealer ? " · mischt" : ""}${startsBidding ? " · begann Ansage" : ""}</small>
           </span>
           <span class="value-badge ${hit ? "hit" : "miss"}">${points > 0 ? `+${points}` : points}</span>
         </li>`;
@@ -257,7 +398,7 @@ function renderRoundPlayers(round) {
         <span class="avatar">${escapeHtml(initials(player.name))}</span>
         <span class="round-player-main">
           <strong>${escapeHtml(player.name)}</strong>
-          <small>${isDealer ? "Geber · sagt zuletzt" : "Ansagereihenfolge"}</small>
+          <small>${isDealer ? "Mischt · sagt zuletzt" : startsBidding ? "Beginnt mit dem Ansagen" : "Ansagereihenfolge"}</small>
         </span>
         <span class="value-badge ${Number.isInteger(bid) ? "" : "empty"}">${Number.isInteger(bid) ? bid : "–"}</span>
       </li>`;
@@ -333,12 +474,132 @@ function renderHistory() {
     </details>`;
 }
 
+function archiveStatistics() {
+  const byProfile = new Map(FIXED_PLAYERS.map((name) => [normalizedProfileId(name), {
+    profileId: normalizedProfileId(name),
+    name,
+    fixed: true,
+    games: 0,
+    wins: 0,
+    points: 0,
+    exactRounds: 0,
+    rounds: 0,
+    bestScore: null,
+  }]));
+
+  let totalRounds = 0;
+  for (const archivedGame of archivedGames) {
+    const scoreboard = scoreboardForGame(archivedGame);
+    const bestScore = Math.max(...scoreboard.map((entry) => entry.score));
+    totalRounds += archivedGame.rounds.length;
+    for (const entry of scoreboard) {
+      const player = archivedGame.players.find((candidate) => candidate.id === entry.id) ?? entry;
+      const profileId = player.profileId ?? normalizedProfileId(player.name);
+      if (!byProfile.has(profileId)) {
+        byProfile.set(profileId, {
+          profileId,
+          name: player.name,
+          fixed: profileId.startsWith("fixed:"),
+          games: 0,
+          wins: 0,
+          points: 0,
+          exactRounds: 0,
+          rounds: 0,
+          bestScore: null,
+        });
+      }
+      const stats = byProfile.get(profileId);
+      stats.games += 1;
+      stats.wins += entry.score === bestScore ? 1 : 0;
+      stats.points += entry.score;
+      stats.exactRounds += entry.exactRounds;
+      stats.rounds += archivedGame.rounds.length;
+      stats.bestScore = stats.bestScore === null ? entry.score : Math.max(stats.bestScore, entry.score);
+    }
+  }
+
+  return {
+    totalRounds,
+    players: [...byProfile.values()].sort((a, b) => {
+      if (a.fixed !== b.fixed) return a.fixed ? -1 : 1;
+      if (a.games !== b.games) return b.games - a.games;
+      return a.name.localeCompare(b.name, "de");
+    }),
+  };
+}
+
+function formatGameDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "ohne Datum" : new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(date);
+}
+
+function renderStatsDialog() {
+  const statistics = archiveStatistics();
+  const activePlayers = statistics.players.filter((entry) => entry.games > 0).length;
+  const rows = statistics.players.map((entry) => `
+    <tr class="${entry.games ? "" : "muted-row"}">
+      <td><strong>${escapeHtml(entry.name)}</strong>${entry.fixed ? "" : "<small>Gast</small>"}</td>
+      <td>${entry.games}</td>
+      <td>${entry.wins}</td>
+      <td>${entry.points}</td>
+      <td>${entry.games ? (entry.points / entry.games).toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "–"}</td>
+      <td>${entry.rounds ? `${Math.round((entry.exactRounds / entry.rounds) * 100)} %` : "–"}</td>
+    </tr>`).join("");
+
+  const games = archivedGames.map((archivedGame) => {
+    const scoreboard = scoreboardForGame(archivedGame).sort((a, b) => b.score - a.score || a.seatIndex - b.seatIndex);
+    const bestScore = Math.max(...scoreboard.map((entry) => entry.score));
+    const winnerNames = scoreboard.filter((entry) => entry.score === bestScore).map((entry) => entry.name).join(" & ");
+    return `
+      <li class="archive-game">
+        <div><strong>${escapeHtml(winnerNames)}${scoreboard.filter((entry) => entry.score === bestScore).length === 1 ? " gewinnt" : " gewinnen"}</strong><small>${formatGameDate(archivedGame.finishedAt ?? archivedGame.updatedAt)} · ${archivedGame.rounds.length} Runden</small></div>
+        <span>${scoreboard.map((entry) => `${escapeHtml(entry.name)} ${entry.score}`).join(" · ")}</span>
+      </li>`;
+  }).join("");
+
+  statsContent.innerHTML = `
+    <div class="dialog-shell">
+      <div class="dialog-head">
+        <div><span class="eyebrow">Langzeitwertung</span><h2 id="stats-title">Alle Spiele</h2></div>
+        <button class="icon-button" type="button" data-action="close-stats" aria-label="Statistik schließen">×</button>
+      </div>
+      <div class="dialog-content">
+        <div class="stats-summary">
+          <div class="preview-stat"><strong>${archivedGames.length}</strong><span>Spiele</span></div>
+          <div class="preview-stat"><strong>${activePlayers}</strong><span>Spieler</span></div>
+          <div class="preview-stat"><strong>${statistics.totalRounds}</strong><span>Runden</span></div>
+        </div>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead><tr><th>Spieler</th><th>Sp.</th><th>Siege</th><th>Punkte</th><th>Ø</th><th>Treffer</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <p class="scroll-hint">Auf kleinen Bildschirmen die Tabelle seitlich wischen.</p>
+        <section class="archive-section">
+          <h3>Abgeschlossene Partien</h3>
+          ${games ? `<ol class="archive-list">${games}</ol>` : '<div class="empty-players">Noch keine Partie abgeschlossen.</div>'}
+        </section>
+      </div>
+      <div class="dialog-footer">
+        <button class="ghost-button" type="button" data-action="close-stats">Schließen</button>
+        <button class="primary-button" type="button" data-action="export-backup">Gesamtsicherung</button>
+      </div>
+    </div>`;
+}
+
+function openStats() {
+  renderStatsDialog();
+  openDialog(statsDialog);
+}
+
 function renderGame() {
   const round = currentRound();
   const copy = phaseCopy(round);
   const progress = ((game.currentRoundIndex + (round.phase === "result" ? 1 : 0)) / game.rounds.length) * 100;
   const direction = game.currentRoundIndex < Math.floor(game.rounds.length / 2) ? "Aufwärts" : game.currentRoundIndex === Math.floor(game.rounds.length / 2) ? "Höchste Runde" : "Abwärts";
   const dealer = game.players[round.dealerIndex];
+  const firstBidder = game.players[(round.dealerIndex + 1) % game.players.length];
   const trumpText = round.cards === 1 ? "Aufdeckkarte verdeckt" : "Trumpfkarte aufdecken";
 
   app.innerHTML = `
@@ -364,7 +625,7 @@ function renderGame() {
         <div class="round-body">
           <div class="instruction-grid">
             <div class="instruction-chip">${trumpText}<span>${round.cards === 1 ? "nicht aufdecken" : "Farbe gilt als Trumpf"}</span></div>
-            <div class="instruction-chip">Geber: ${escapeHtml(dealer.name)}<span>sagt als Letztes an</span></div>
+            <div class="instruction-chip">Mischt: ${escapeHtml(dealer.name)}<span>${escapeHtml(firstBidder.name)} beginnt die Ansage</span></div>
           </div>
           <div class="phase-head"><h2>${copy.title}</h2><p>${copy.copy}</p></div>
           <ol class="round-player-list">${renderRoundPlayers(round)}</ol>
@@ -407,11 +668,13 @@ function renderFinished() {
 }
 
 function addPlayer(name) {
-  const cleaned = String(name).trim();
+  let cleaned = String(name).trim();
   if (!cleaned) {
     showToast("Bitte einen Namen eingeben.");
     return false;
   }
+  const fixedMatch = FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"));
+  if (fixedMatch) cleaned = fixedMatch;
   if (setupPlayers.some((player) => player.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"))) {
     showToast("Dieser Name ist bereits eingetragen.");
     return false;
@@ -421,6 +684,7 @@ function addPlayer(name) {
     return false;
   }
   setupPlayers.push(cleaned);
+  if (!setupStartingMixerName) setupStartingMixerName = cleaned;
   persistSetup();
   render();
   return true;
@@ -432,7 +696,12 @@ function startGame() {
     return;
   }
   try {
-    game = createGame(setupPlayers, { gameId: gameId() });
+    const startingDealerIndex = setupPlayers.indexOf(setupStartingMixerName);
+    game = createGame(setupPlayers, {
+      gameId: gameId(),
+      startingDealerIndex,
+      profileIds: setupPlayers.map(normalizedProfileId),
+    });
     persistGame();
     navigator.storage?.persist?.().catch(() => {});
     render();
@@ -450,7 +719,7 @@ function firstMissingStep(values, order) {
 function openBidWizard() {
   const round = currentRound();
   if (!round || round.phase !== "bidding") return;
-  const order = biddingOrderForRound(game.currentRoundIndex, game.players.length);
+  const order = biddingOrder(game.currentRoundIndex);
   trickWizard = null;
   bidWizard = { roundIndex: game.currentRoundIndex, step: firstMissingStep(round.bids, order) };
   renderBidWizard();
@@ -471,7 +740,7 @@ function previousValuesList(order, values, step, type, round) {
     const value = values[player.id];
     const detail = type === "tricks" && Number.isInteger(value)
       ? `Ansage ${round.bids[player.id]} · ${value === round.bids[player.id] ? "richtig" : "daneben"}`
-      : index === order.length - 1 ? "sagt zuletzt an" : "";
+      : index === 0 ? "beginnt die Ansage" : index === order.length - 1 ? "mischt · sagt zuletzt an" : "";
     return `
       <li class="${index === step ? "current" : ""}">
         <span>${escapeHtml(player.name)}${detail ? `<small> · ${detail}</small>` : ""}</span>
@@ -482,7 +751,7 @@ function previousValuesList(order, values, step, type, round) {
 
 function renderBidWizard() {
   const round = game.rounds[bidWizard.roundIndex];
-  const order = biddingOrderForRound(bidWizard.roundIndex, game.players.length);
+  const order = biddingOrder(bidWizard.roundIndex);
   const playerIndex = order[bidWizard.step];
   const player = game.players[playerIndex];
   const selected = round.bids[player.id];
@@ -494,6 +763,11 @@ function renderBidWizard() {
   const allComplete = validation.reason !== "missing";
   const invalidTotal = allComplete && validation.reason === "equal";
   const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
+  const bidRole = playerIndex === round.dealerIndex
+    ? "Mischt · letzte Ansage"
+    : bidWizard.step === 0
+      ? "Beginnt mit dem Ansagen"
+      : `Mischt: ${game.players[round.dealerIndex].name}`;
 
   const numberButtons = Array.from({ length: round.cards + 1 }, (_, value) => {
     const isForbidden = isLast && forbidden >= 0 && forbidden <= round.cards && value === forbidden;
@@ -510,7 +784,7 @@ function renderBidWizard() {
         <div class="wizard-progress">${wizardProgress(order, round.bids, bidWizard.step)}</div>
         <p class="wizard-question">Wie viele Stiche sagst du an?</p>
         <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
-        <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} auf der Hand</span><span>${playerIndex === round.dealerIndex ? "Geber · letzte Ansage" : `Geber: ${escapeHtml(game.players[round.dealerIndex].name)}`}</span></div>
+        <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} auf der Hand</span><span>${escapeHtml(bidRole)}</span></div>
         <div class="number-grid">${numberButtons}</div>
         <div class="total-panel">
           <div class="total-stat"><strong>${total}</strong><span>Ansagen gesamt</span></div>
@@ -531,7 +805,7 @@ function renderBidWizard() {
 function openTrickWizard(startAtBeginning = false) {
   const round = currentRound();
   if (!round || (round.phase !== "playing" && round.phase !== "result")) return;
-  const order = biddingOrderForRound(game.currentRoundIndex, game.players.length);
+  const order = biddingOrder(game.currentRoundIndex);
   bidWizard = null;
   trickWizard = {
     roundIndex: game.currentRoundIndex,
@@ -545,7 +819,7 @@ function openTrickWizard(startAtBeginning = false) {
 
 function renderTrickWizard() {
   const round = game.rounds[trickWizard.roundIndex];
-  const order = biddingOrderForRound(trickWizard.roundIndex, game.players.length);
+  const order = biddingOrder(trickWizard.roundIndex);
   const playerIndex = order[trickWizard.step];
   const player = game.players[playerIndex];
   const selected = round.tricks[player.id];
@@ -588,10 +862,12 @@ function advanceRound() {
   round.phase = "complete";
   if (game.currentRoundIndex === game.rounds.length - 1) {
     game.status = "finished";
+    game.finishedAt = new Date().toISOString();
   } else {
     game.currentRoundIndex += 1;
   }
   persistGame();
+  if (game.status === "finished") archiveCompletedGame(game);
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -666,32 +942,82 @@ function renderRoundEditor() {
 }
 
 function exportGame() {
-  if (!game) return;
-  const payload = JSON.stringify(game, null, 2);
+  const backup = {
+    type: "aufzug-full-backup",
+    backupVersion: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    activeGame: game,
+    archivedGames,
+    setup: {
+      players: setupPlayers,
+      startingMixerName: setupStartingMixerName,
+    },
+  };
+  const payload = JSON.stringify(backup, null, 2);
   const blob = new Blob([payload], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const date = new Date().toISOString().slice(0, 10);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `Aufzug-Partie_${date}.json`;
+  link.download = `Aufzug-Gesamtsicherung_${date}.json`;
   document.body.append(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
   closeDialog(menuDialog);
-  showToast("Sicherung wurde erstellt.");
+  showToast("Gesamtsicherung wurde erstellt.");
+}
+
+function mergeArchivedGames(incomingGames) {
+  const merged = new Map(archivedGames.map((entry) => [entry.gameId, entry]));
+  for (const incoming of incomingGames) {
+    const existing = merged.get(incoming.gameId);
+    if (!existing || String(incoming.updatedAt ?? "") >= String(existing.updatedAt ?? "")) {
+      merged.set(incoming.gameId, incoming);
+    }
+  }
+  archivedGames = [...merged.values()].sort((a, b) => String(b.finishedAt ?? b.updatedAt).localeCompare(String(a.finishedAt ?? a.updatedAt)));
+  persistArchive();
 }
 
 async function importGameFromFile(file) {
   try {
     const parsed = JSON.parse(await file.text());
-    if (!isGameShapeValid(parsed)) throw new Error("Diese Datei enthält keine gültige Aufzug-Partie.");
-    if (game && !window.confirm("Die aktuelle Partie durch die Sicherung ersetzen?")) return;
-    game = parsed;
-    persistGame();
+    if (parsed?.type === "aufzug-full-backup") {
+      const incomingActive = parsed.activeGame;
+      const incomingArchive = Array.isArray(parsed.archivedGames) ? parsed.archivedGames : [];
+      if (incomingActive && !isGameShapeValid(incomingActive)) throw new Error("Die laufende Partie in der Sicherung ist ungültig.");
+      if (!incomingArchive.every((entry) => isGameShapeValid(entry) && entry.status === "finished")) throw new Error("Das Spielearchiv in der Sicherung ist ungültig.");
+      if (game && incomingActive && !window.confirm("Die aktuelle Partie durch die laufende Partie aus der Sicherung ersetzen?")) return;
+
+      mergeArchivedGames(incomingArchive);
+      if (incomingActive) {
+        game = incomingActive;
+        if (!Number.isInteger(game.startingDealerIndex)) game.startingDealerIndex = game.rounds[0]?.dealerIndex ?? 0;
+        persistGame();
+        if (game.status === "finished") archiveCompletedGame(game);
+      }
+      if (parsed.setup && Array.isArray(parsed.setup.players)) {
+        setupPlayers = parsed.setup.players.map((name) => String(name)).filter(Boolean).slice(0, MAX_PLAYERS);
+        setupStartingMixerName = setupPlayers.includes(parsed.setup.startingMixerName) ? parsed.setup.startingMixerName : (setupPlayers[0] ?? null);
+        persistSetup();
+      }
+    } else if (isGameShapeValid(parsed)) {
+      if (parsed.status === "finished") {
+        archiveCompletedGame(parsed);
+      } else {
+        if (game && !window.confirm("Die aktuelle Partie durch die Sicherung ersetzen?")) return;
+        game = parsed;
+        if (!Number.isInteger(game.startingDealerIndex)) game.startingDealerIndex = game.rounds[0]?.dealerIndex ?? 0;
+        persistGame();
+      }
+    } else {
+      throw new Error("Diese Datei enthält keine gültige Aufzug-Sicherung.");
+    }
     closeDialog(menuDialog);
+    closeDialog(statsDialog);
     render();
-    showToast("Partie erfolgreich wiederhergestellt.");
+    showToast("Sicherung erfolgreich wiederhergestellt.");
   } catch (error) {
     showToast(error.message || "Sicherung konnte nicht gelesen werden.");
   } finally {
@@ -700,7 +1026,10 @@ async function importGameFromFile(file) {
 }
 
 function resetToSetup(prefill = true) {
-  if (prefill && game) setupPlayers = game.players.map((player) => player.name);
+  if (prefill && game) {
+    setupPlayers = game.players.map((player) => player.name);
+    setupStartingMixerName = game.players[game.startingDealerIndex ?? 0]?.name ?? setupPlayers[0] ?? null;
+  }
   game = null;
   removeSavedGame();
   persistSetup();
@@ -714,9 +1043,23 @@ function requestNewGame() {
   resetToSetup(true);
 }
 
+function lockApp() {
+  try {
+    sessionStorage.removeItem(ACCESS_SESSION_KEY);
+  } catch {}
+  appUnlocked = false;
+  accessError = "";
+  closeDialog(menuDialog);
+  render();
+}
+
 function startRematch() {
   const names = game.players.map((player) => player.name);
-  game = createGame(names, { gameId: gameId() });
+  game = createGame(names, {
+    gameId: gameId(),
+    startingDealerIndex: game.startingDealerIndex ?? 0,
+    profileIds: game.players.map((player) => player.profileId ?? normalizedProfileId(player.name)),
+  });
   persistGame();
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -734,7 +1077,32 @@ async function copyResult() {
   }
 }
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
+  if (event.target.id === "access-code-form") {
+    event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      const digest = await digestAccessCode(event.target.elements.accessCode.value);
+      if (digest !== ACCESS_CODE_DIGEST) {
+        accessError = "Der eingegebene Code ist nicht richtig.";
+        renderLock();
+        return;
+      }
+      appUnlocked = true;
+      accessError = "";
+      try {
+        sessionStorage.setItem(ACCESS_SESSION_KEY, ACCESS_CODE_DIGEST);
+      } catch {}
+      render();
+      showToast(game?.status === "active" ? "Laufende Partie wurde fortgesetzt." : "App wurde geöffnet.");
+    } catch {
+      accessError = "Der Code konnte in diesem Browser nicht geprüft werden.";
+      renderLock();
+    }
+    return;
+  }
+
   if (event.target.id !== "add-player-form") return;
   event.preventDefault();
   const input = event.target.elements.playerName;
@@ -744,6 +1112,12 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.id === "starting-mixer-select") {
+    setupStartingMixerName = event.target.value;
+    persistSetup();
+    render();
+    return;
+  }
   const bidPlayerId = event.target.dataset.editBid;
   const trickPlayerId = event.target.dataset.editTrick;
   if (bidPlayerId && editDraft) {
@@ -767,7 +1141,7 @@ document.addEventListener("click", (event) => {
 
   if (button.dataset.bidValue !== undefined && bidWizard) {
     const round = game.rounds[bidWizard.roundIndex];
-    const order = biddingOrderForRound(bidWizard.roundIndex, game.players.length);
+    const order = biddingOrder(bidWizard.roundIndex);
     const player = game.players[order[bidWizard.step]];
     round.bids[player.id] = Number(button.dataset.bidValue);
     persistGame();
@@ -777,7 +1151,7 @@ document.addEventListener("click", (event) => {
 
   if (button.dataset.trickValue !== undefined && trickWizard) {
     const round = game.rounds[trickWizard.roundIndex];
-    const order = biddingOrderForRound(trickWizard.roundIndex, game.players.length);
+    const order = biddingOrder(trickWizard.roundIndex);
     const player = game.players[order[trickWizard.step]];
     round.tricks[player.id] = Number(button.dataset.trickValue);
     persistGame();
@@ -789,6 +1163,20 @@ document.addEventListener("click", (event) => {
   const index = Number(button.dataset.index);
 
   switch (action) {
+    case "toggle-fixed-player": {
+      const name = button.dataset.name;
+      const existingIndex = setupPlayers.indexOf(name);
+      if (existingIndex >= 0) {
+        if (setupStartingMixerName === name) setupStartingMixerName = null;
+        setupPlayers.splice(existingIndex, 1);
+        if (!setupStartingMixerName) setupStartingMixerName = setupPlayers[0] ?? null;
+        persistSetup();
+        render();
+      } else {
+        addPlayer(name);
+      }
+      break;
+    }
     case "player-up":
       if (index > 0) [setupPlayers[index - 1], setupPlayers[index]] = [setupPlayers[index], setupPlayers[index - 1]];
       persistSetup();
@@ -800,7 +1188,9 @@ document.addEventListener("click", (event) => {
       render();
       break;
     case "player-remove":
+      if (setupPlayers[index] === setupStartingMixerName) setupStartingMixerName = null;
       setupPlayers.splice(index, 1);
+      if (!setupStartingMixerName) setupStartingMixerName = setupPlayers[0] ?? null;
       persistSetup();
       render();
       break;
@@ -812,6 +1202,15 @@ document.addEventListener("click", (event) => {
       break;
     case "open-help":
       openDialog(helpDialog);
+      break;
+    case "open-stats":
+      openStats();
+      break;
+    case "close-stats":
+      closeDialog(statsDialog);
+      break;
+    case "export-backup":
+      exportGame();
       break;
     case "open-bids":
       openBidWizard();
@@ -828,7 +1227,7 @@ document.addEventListener("click", (event) => {
       break;
     case "bid-next": {
       const round = game.rounds[bidWizard.roundIndex];
-      const order = biddingOrderForRound(bidWizard.roundIndex, game.players.length);
+      const order = biddingOrder(bidWizard.roundIndex);
       if (bidWizard.step < order.length - 1) {
         bidWizard.step += 1;
         renderBidWizard();
@@ -848,7 +1247,7 @@ document.addEventListener("click", (event) => {
       break;
     case "trick-next": {
       const round = game.rounds[trickWizard.roundIndex];
-      const order = biddingOrderForRound(trickWizard.roundIndex, game.players.length);
+      const order = biddingOrder(trickWizard.roundIndex);
       if (trickWizard.step < order.length - 1) {
         trickWizard.step += 1;
         renderTrickWizard();
@@ -883,6 +1282,7 @@ document.addEventListener("click", (event) => {
         round.bids = { ...editDraft.bids };
         round.tricks = { ...editDraft.tricks };
         persistGame();
+        if (game.status === "finished") archiveCompletedGame(game);
         closeDialog(editDialog);
         editDraft = null;
         render();
@@ -903,11 +1303,16 @@ document.addEventListener("click", (event) => {
 
 document.querySelector("#export-game-button").addEventListener("click", exportGame);
 document.querySelector("#import-game-button").addEventListener("click", () => importFile.click());
+document.querySelector("#stats-button").addEventListener("click", () => {
+  closeDialog(menuDialog);
+  openStats();
+});
 document.querySelector("#help-button").addEventListener("click", () => {
   closeDialog(menuDialog);
   openDialog(helpDialog);
 });
 document.querySelector("#new-game-button").addEventListener("click", requestNewGame);
+document.querySelector("#lock-button").addEventListener("click", lockApp);
 importFile.addEventListener("change", () => {
   const [file] = importFile.files;
   if (file) importGameFromFile(file);

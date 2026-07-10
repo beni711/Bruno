@@ -33,8 +33,11 @@
         <button class="icon-button" type="button" data-close-dialog="menu-dialog" aria-label="Menü schließen">×</button>
       </div>
       <div class="menu-list">
+        <button type="button" id="stats-button" class="menu-button">
+          <span>Alle Spiele auswerten</span><small>Archiv und Gesamtstatistik</small>
+        </button>
         <button type="button" id="export-game-button" class="menu-button">
-          <span>Sicherung exportieren</span><small>Partie als Datei speichern</small>
+          <span>Gesamtsicherung exportieren</span><small>Partie, Archiv und Spielerauswahl</small>
         </button>
         <button type="button" id="import-game-button" class="menu-button">
           <span>Sicherung importieren</span><small>Gespeicherte Partie laden</small>
@@ -42,10 +45,17 @@
         <button type="button" id="help-button" class="menu-button">
           <span>Regeln & Annahmen</span><small>So rechnet die App</small>
         </button>
+        <button type="button" id="lock-button" class="menu-button">
+          <span>App sperren</span><small>Gemeinsamen Code erneut verlangen</small>
+        </button>
         <button type="button" id="new-game-button" class="menu-button danger-menu">
           <span>Neue Partie</span><small>Aktuelle Partie beenden</small>
         </button>
       </div>
+    </dialog>
+
+    <dialog id="stats-dialog" class="sheet-dialog stats-dialog" aria-labelledby="stats-title">
+      <div id="stats-content"></div>
     </dialog>
 
     <dialog id="help-dialog" class="sheet-dialog compact-dialog" aria-labelledby="help-title">
@@ -64,9 +74,11 @@
           <li>Die Summe aller Ansagen darf nicht genau der Kartenanzahl entsprechen.</li>
           <li>Bei der Auswertung werden die tatsächlich gemachten Stiche frei eingetragen; dort gibt es keinen gesperrten oder automatisch vorgegebenen Wert.</li>
           <li>Exakt getroffen: 10 + 2 Punkte je angesagtem Stich. Daneben: −2 Punkte je Stich Abweichung.</li>
-          <li>Der Geber rotiert pro Runde und sagt zuletzt an.</li>
+          <li>Vor dem Spiel wird ausgewählt, wer zuerst mischt. Der Mischer wechselt jede Runde im Kreis; die Person danach beginnt mit dem Ansagen und der Mischer sagt zuletzt an.</li>
+          <li>BP, MR, MA, TB, TS, KS und KK können direkt ausgewählt werden; Gäste lassen sich ergänzen.</li>
+          <li>Abgeschlossene Partien fließen automatisch in die Gesamtstatistik ein.</li>
         </ul>
-        <p>Der Stand wird nur auf diesem Gerät gespeichert. Es werden keine Namen oder Ergebnisse versendet.</p>
+        <p>Der Stand wird nur auf diesem Gerät gespeichert. Nach Eingabe des gemeinsamen Codes wird eine laufende Partie automatisch fortgesetzt. Für ein anderes Gerät muss eine Gesamtsicherung importiert werden.</p>
       </div>
       <button class="primary-button full-width" type="button" data-close-dialog="help-dialog">Verstanden</button>
     </dialog>

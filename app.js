@@ -5,7 +5,6 @@ import {
   biddingOrderForRound,
   createGame,
   isGameShapeValid,
-  maxCardsForPlayers,
   pointsForRound,
   roundPoints,
   scoreboardForGame,
@@ -279,18 +278,13 @@ function renderSetup() {
     setupStartingMixerName = setupPlayers[0] ?? null;
   }
   const canStart = count >= MIN_PLAYERS && count <= MAX_PLAYERS;
-  const peak = canStart ? maxCardsForPlayers(count) : null;
-  const totalRounds = peak ? (peak * 2) - 1 : null;
-  const mixerIndex = setupPlayers.indexOf(setupStartingMixerName);
-  const firstBidderName = count ? setupPlayers[(mixerIndex + 1) % count] : null;
 
   const playerRows = setupPlayers.map((name, index) => {
     const fixed = FIXED_PLAYERS.includes(name);
-    const details = [fixed ? "fester Spieler" : "Gast", name === setupStartingMixerName ? "mischt zuerst" : ""].filter(Boolean).join(" · ");
     return `
       <li class="player-row">
         <span class="player-number">${index + 1}</span>
-        <span class="player-name">${escapeHtml(name)}<small class="${name === setupStartingMixerName ? "mixer-badge" : ""}">${details}</small></span>
+        <span class="player-name">${escapeHtml(name)}</span>
         <span class="row-actions">
           <button class="mini-button" type="button" data-action="player-up" data-index="${index}" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach oben">↑</button>
           <button class="mini-button" type="button" data-action="player-down" data-index="${index}" ${index === count - 1 ? "disabled" : ""} aria-label="${escapeHtml(name)} nach unten">↓</button>
@@ -308,49 +302,35 @@ function renderSetup() {
   }).join("");
 
   app.innerHTML = `
-    ${brandMarkup(false)}
+    ${brandMarkup(true)}
     <main>
       <section class="setup-panel">
-        <div class="section-head">
-          <div>
-            <h2>Wer spielt mit?</h2>
-            <p>${count} von maximal ${MAX_PLAYERS} Spielern</p>
-          </div>
-        </div>
+        <h2 class="setup-title">Spieler auswählen</h2>
 
         <div class="fixed-roster">
-          <span class="field-label">Feste Spieler – heute auswählen</span>
-          <p class="roster-help">Die Namen bleiben dauerhaft erhalten. Antippen wählt sie für heute an oder ab.</p>
+          <span class="field-label">Feste Spieler</span>
           <div class="roster-chips">${fixedPlayerButtons}</div>
         </div>
 
         <form id="add-player-form" class="player-add-form" autocomplete="off">
           <label class="sr-only" for="player-name-input">Gastname</label>
-          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Gast hinzufügen" ${count >= MAX_PLAYERS ? "disabled" : ""}>
+          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Gastname" ${count >= MAX_PLAYERS ? "disabled" : ""}>
           <button class="secondary-button" type="submit" ${count >= MAX_PLAYERS ? "disabled" : ""}>Gast hinzufügen</button>
         </form>
 
         <span class="field-label selected-players-label">Heute dabei</span>
         ${count
           ? `<ol class="player-list">${playerRows}</ol>`
-          : '<div class="empty-players">Noch niemand für heute ausgewählt.</div>'}
+          : ""}
 
         ${count ? `
           <div class="mixer-picker">
             <label for="starting-mixer-select">Wer mischt zuerst?</label>
             <select id="starting-mixer-select" class="text-input">${mixerOptions}</select>
-            <p><strong>${escapeHtml(setupStartingMixerName)}</strong> mischt zuerst. Danach beginnt <strong>${escapeHtml(firstBidderName)}</strong> mit dem Ansagen.</p>
           </div>` : ""}
-
-        <div class="round-preview" aria-label="Spielübersicht">
-          <div class="preview-stat"><strong>${count || "–"}</strong><span>Spieler</span></div>
-          <div class="preview-stat"><strong>${peak ?? "–"}</strong><span>max. Karten</span></div>
-          <div class="preview-stat"><strong>${totalRounds ?? "–"}</strong><span>Spielrunden</span></div>
-        </div>
 
         <div class="action-row">
           <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>Partie starten</button>
-          <button class="secondary-button full-width" type="button" data-action="open-stats">Alle Spiele auswerten (${archivedGames.length})</button>
         </div>
       </section>
     </main>`;

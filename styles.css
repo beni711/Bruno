@@ -150,6 +150,10 @@ h3 {
   padding: 22px;
 }
 
+.setup-title {
+  margin-bottom: 20px;
+}
+
 .section-head {
   display: flex;
   align-items: flex-start;
@@ -190,12 +194,6 @@ h3 {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
-}
-
-.roster-help {
-  margin: -4px 0 10px;
-  color: var(--muted);
-  font-size: 0.75rem;
 }
 
 .roster-chips {
@@ -341,18 +339,6 @@ h3 {
   font-weight: 700;
 }
 
-.player-name small {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 650;
-}
-
-.mixer-badge {
-  color: #8a5e0a !important;
-}
-
 .row-actions {
   display: flex;
   gap: 3px;
@@ -379,13 +365,6 @@ h3 {
   opacity: 0.25;
 }
 
-.round-preview {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 17px 0;
-}
-
 .mixer-picker {
   margin-top: 16px;
   padding: 15px;
@@ -404,13 +383,6 @@ h3 {
 
 .mixer-picker .text-input {
   border-color: #dec37e;
-}
-
-.mixer-picker p {
-  margin: 9px 1px 0;
-  color: #6f6249;
-  font-size: 0.78rem;
-  line-height: 1.4;
 }
 
 .preview-stat {

@@ -671,11 +671,11 @@ function buildGamePdf() {
   const pageWidth = 842;
   const pageHeight = 595;
   const margin = 20;
-  const cardWidth = 32;
-  const penaltyWidth = 100;
-  const pairedColumns = game.players.length <= 6;
-  const bidWidth = pairedColumns ? 26 : 46;
-  const scoreWidth = pairedColumns ? 34 : 0;
+  const cardWidth = 24;
+  const penaltyWidth = 92;
+  const pairedColumns = game.players.length <= 7;
+  const bidWidth = pairedColumns ? 16 : 36;
+  const scoreWidth = pairedColumns ? 27 : 0;
   const playerWidth = bidWidth + scoreWidth;
   const rounds = roundsForDetailDocument();
   const scores = scoreboardForGame(game).sort((a, b) => a.seatIndex - b.seatIndex);
@@ -683,7 +683,7 @@ function buildGamePdf() {
   const top = 574;
   const headerHeight = 16;
   const rowHeight = Math.max(18, Math.min(25, Math.floor((top - 18 - headerHeight) / rows.length)));
-  const valueFont = pairedColumns ? 6.4 : 5.8;
+  const valueFont = pairedColumns ? 5.6 : 4.9;
   const commands = ["1 g", `0 0 ${pageWidth} ${pageHeight} re f`, "0 g", "0.16 w", "0.12 0.23 0.20 RG"];
   const text = (value, x, y, size) => commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${pdfSafeText(value)}) Tj ET`);
   const centeredText = (value, x, width, y, size) => {

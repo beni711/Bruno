@@ -3,6 +3,10 @@ export const MAX_HAND_CARDS = 11;
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 10;
 export const SCHEMA_VERSION = 1;
+export const PENALTY_VALUES = Object.freeze({
+  notTrump: 20,
+  tooEarly: 2,
+});
 
 export function maxCardsForPlayers(playerCount) {
   if (!Number.isInteger(playerCount) || playerCount < MIN_PLAYERS || playerCount > MAX_PLAYERS) {
@@ -144,8 +148,17 @@ export function createGame(playerNames, options = {}) {
       phase: "bidding",
       bids: {},
       tricks: {},
+      penalties: {},
     })),
   };
+}
+
+export function penaltyPointsForRound(round, playerId) {
+  const penalties = round?.penalties?.[playerId] ?? {};
+  return -(
+    (penalties.notTrump ? PENALTY_VALUES.notTrump : 0)
+    + (penalties.tooEarly ? PENALTY_VALUES.tooEarly : 0)
+  );
 }
 
 export function roundPoints(round, playerId) {
@@ -154,7 +167,7 @@ export function roundPoints(round, playerId) {
   if (!Number.isInteger(bid) || !Number.isInteger(tricks)) {
     return 0;
   }
-  return pointsForRound(bid, tricks);
+  return pointsForRound(bid, tricks) + penaltyPointsForRound(round, playerId);
 }
 
 export function scoreboardForGame(game) {

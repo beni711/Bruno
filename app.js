@@ -1,10 +1,12 @@
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
+  PENALTY_VALUES,
   autoFillRemainingTricks,
   biddingOrderForRound,
   createGame,
   isGameShapeValid,
+  penaltyPointsForRound,
   pointsForRound,
   roundPoints,
   scoreboardForGame,
@@ -21,6 +23,10 @@ const ACCESS_SESSION_KEY = "aufzug.access.unlocked.v1";
 const ACCESS_CODE_DIGEST = "35e52331b7fb9acc6006ffeb9f8226f8ed738c2b896032ab1a241da41694076e";
 const ACCESS_CODE_SALT = "aufzug-shared-code-v1:";
 const FIXED_PLAYERS = ["BP", "MR", "MA", "TB", "TS", "KS", "KK"];
+const PENALTY_LABELS = {
+  notTrump: "Nicht Trumpf gespielt",
+  tooEarly: "Zu früh gespielt",
+};
 const BACKUP_VERSION = 2;
 
 const app = document.querySelector("#app");
@@ -32,6 +38,8 @@ const menuDialog = document.querySelector("#menu-dialog");
 const helpDialog = document.querySelector("#help-dialog");
 const statsDialog = document.querySelector("#stats-dialog");
 const statsContent = document.querySelector("#stats-content");
+const detailsDialog = document.querySelector("#details-dialog");
+const detailsContent = document.querySelector("#details-content");
 const importFile = document.querySelector("#import-file");
 const toast = document.querySelector("#toast");
 
@@ -65,6 +73,22 @@ function initials(name) {
 
 function pluralCards(cards) {
   return cards === 1 ? "Karte" : "Karten";
+}
+
+function signedPoints(points) {
+  return points > 0 ? `+${points}` : String(points);
+}
+
+function penaltySummary(round, playerId) {
+  const penalties = round?.penalties?.[playerId] ?? {};
+  return Object.entries(PENALTY_LABELS)
+    .filter(([key]) => penalties[key])
+    .map(([key, label]) => `${label} (${signedPoints(-PENALTY_VALUES[key])})`)
+    .join(" · ");
+}
+
+function clonePenalties(penalties = {}) {
+  return Object.fromEntries(Object.entries(penalties).map(([playerId, values]) => [playerId, { ...values }]));
 }
 
 function readSessionUnlock() {
@@ -371,14 +395,16 @@ function renderRoundPlayers(round) {
     if (round.phase === "result") {
       const points = roundPoints(round, player.id);
       const hit = bid === tricks;
+      const penalty = penaltySummary(round, player.id);
       return `
         <li class="round-player">
           <span class="avatar">${escapeHtml(initials(player.name))}</span>
           <span class="round-player-main">
             <strong>${escapeHtml(player.name)}</strong>
             <small>Ansage ${bid} · gemacht ${tricks}${isDealer ? " · mischt" : ""}${startsBidding ? " · begann Ansage" : ""}</small>
+            ${penalty ? `<small class="penalty-copy">${escapeHtml(penalty)}</small>` : ""}
           </span>
-          <span class="value-badge ${hit ? "hit" : "miss"}">${points > 0 ? `+${points}` : points}</span>
+          <span class="value-badge ${hit && !penalty ? "hit" : "miss"}">${signedPoints(points)}</span>
         </li>`;
     }
 
@@ -404,7 +430,7 @@ function renderPhaseActions(round, copy) {
   return `
     <div class="action-row split">
       <button class="primary-button" type="button" data-action="next-round">${copy.button}</button>
-      <button class="secondary-button" type="button" data-action="edit-current-result">Korrigieren</button>
+      <button class="secondary-button" type="button" data-action="edit-current-result">Korrigieren & Strafen</button>
     </div>`;
 }
 
@@ -434,7 +460,79 @@ function renderScoreboard() {
         <thead><tr><th>Rang</th><th>Spieler</th><th>Treffer</th><th>Punkte</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      <button class="secondary-button full-width details-button" type="button" data-action="open-details">Details</button>
     </section>`;
+}
+
+function roundsForDetailDocument() {
+  let lastRoundWithData = -1;
+  for (const [index, round] of game.rounds.entries()) {
+    const hasData = Object.keys(round.bids ?? {}).length
+      || Object.keys(round.tricks ?? {}).length
+      || Object.keys(round.penalties ?? {}).length;
+    if (hasData || round.phase === "result" || round.phase === "complete") lastRoundWithData = index;
+  }
+  return game.rounds.slice(0, Math.max(0, lastRoundWithData) + 1);
+}
+
+function detailCell(round, player) {
+  const bid = round.bids?.[player.id];
+  const tricks = round.tricks?.[player.id];
+  if (!Number.isInteger(bid) || !Number.isInteger(tricks)) {
+    return '<td class="detail-empty">—<small>offen</small></td>';
+  }
+  const penalty = penaltySummary(round, player.id);
+  return `
+    <td>
+      <strong>${signedPoints(roundPoints(round, player.id))}</strong>
+      <small>Ansage ${bid} · gemacht ${tricks}</small>
+      ${penalty ? `<small class="penalty-copy">${escapeHtml(penalty)}</small>` : ""}
+    </td>`;
+}
+
+function renderDetailsDocument() {
+  const rounds = roundsForDetailDocument();
+  const scoreboard = scoreboardForGame(game).sort((a, b) => a.seatIndex - b.seatIndex);
+  const roundRows = rounds.map((round) => `
+    <tr>
+      <th scope="row"><strong>Karte ${round.cards}</strong><small>Runde ${round.number}</small></th>
+      ${game.players.map((player) => detailCell(round, player)).join("")}
+    </tr>`).join("");
+  const totalCells = scoreboard.map((entry) => `<td><strong>${signedPoints(entry.score)}</strong><small>${entry.exactRounds} Treffer</small></td>`).join("");
+  const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(game.createdAt));
+
+  detailsContent.innerHTML = `
+    <div class="dialog-shell detail-document">
+      <div class="dialog-head">
+        <div><span class="eyebrow">Dokumentation</span><h2 id="details-title">Spiel-Details</h2></div>
+        <button class="icon-button" type="button" data-action="close-details" aria-label="Details schließen">×</button>
+      </div>
+      <div class="dialog-content">
+        <div class="document-meta"><strong>Aufzug</strong><span>Beginn: ${escapeHtml(date)} · ${game.players.map((player) => escapeHtml(player.name)).join(" · ")}</span></div>
+        <p class="document-legend"><strong>Punkte</strong> · Ansage · gemacht · Strafen</p>
+        <div class="detail-table-wrap">
+          <table class="detail-table">
+            <thead><tr><th>Karte</th>${game.players.map((player) => `<th>${escapeHtml(player.name)}</th>`).join("")}</tr></thead>
+            <tbody>${roundRows}</tbody>
+            <tfoot><tr><th>Gesamt</th>${totalCells}</tr></tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="dialog-footer detail-actions">
+        <button class="secondary-button" type="button" data-action="print-details">Drucken / PDF</button>
+        <button class="primary-button" type="button" data-action="close-details">Schließen</button>
+      </div>
+    </div>`;
+}
+
+function openDetailsDocument() {
+  renderDetailsDocument();
+  openDialog(detailsDialog);
+}
+
+function printDetailsDocument() {
+  document.body.classList.add("printing-details");
+  window.print();
 }
 
 function completedRoundEntries() {
@@ -896,6 +994,7 @@ function openRoundEditor(roundIndex) {
     roundIndex,
     bids: { ...round.bids },
     tricks: { ...round.tricks },
+    penalties: clonePenalties(round.penalties),
   };
   renderRoundEditor();
   openDialog(editDialog);
@@ -911,13 +1010,22 @@ function renderRoundEditor() {
   const trickValidation = validateTricks(editDraft.tricks, playerIds(), round.cards);
   const valid = bidValidation.valid && trickValidation.valid;
 
-  const rows = game.players.map((player) => `
-    <tr>
-      <td><strong>${escapeHtml(player.name)}</strong></td>
-      <td><select class="number-select" data-edit-bid="${player.id}" aria-label="Ansage von ${escapeHtml(player.name)}">${optionMarkup(round.cards, editDraft.bids[player.id])}</select></td>
-      <td><select class="number-select" data-edit-trick="${player.id}" aria-label="Stiche von ${escapeHtml(player.name)}">${optionMarkup(round.cards, editDraft.tricks[player.id])}</select></td>
-      <td><strong>${pointsForRound(editDraft.bids[player.id], editDraft.tricks[player.id])}</strong></td>
-    </tr>`).join("");
+  const rows = game.players.map((player) => {
+    const penalties = editDraft.penalties[player.id] ?? {};
+    const basePoints = pointsForRound(editDraft.bids[player.id], editDraft.tricks[player.id]);
+    const penaltyPoints = penaltyPointsForRound({ penalties: editDraft.penalties }, player.id);
+    return `
+      <tr>
+        <td><strong>${escapeHtml(player.name)}</strong></td>
+        <td><select class="number-select" data-edit-bid="${player.id}" aria-label="Ansage von ${escapeHtml(player.name)}">${optionMarkup(round.cards, editDraft.bids[player.id])}</select></td>
+        <td><select class="number-select" data-edit-trick="${player.id}" aria-label="Stiche von ${escapeHtml(player.name)}">${optionMarkup(round.cards, editDraft.tricks[player.id])}</select></td>
+        <td class="penalty-options">
+          <label><input type="checkbox" data-edit-penalty-player="${player.id}" data-edit-penalty-type="notTrump" ${penalties.notTrump ? "checked" : ""}> −20 Trumpf</label>
+          <label><input type="checkbox" data-edit-penalty-player="${player.id}" data-edit-penalty-type="tooEarly" ${penalties.tooEarly ? "checked" : ""}> −2 zu früh</label>
+        </td>
+        <td><strong>${signedPoints(basePoints + penaltyPoints)}</strong></td>
+      </tr>`;
+  }).join("");
 
   const issues = [
     !bidValidation.valid ? `Ansagen gesamt: ${bidValidation.total}. Die Summe darf nicht genau ${round.cards} sein.` : "",
@@ -932,10 +1040,10 @@ function renderRoundEditor() {
         <button class="icon-button" type="button" data-action="close-editor" aria-label="Bearbeitung schließen">×</button>
       </div>
       <div class="dialog-content">
-        <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} je Spieler</span><span>Punkte werden neu berechnet</span></div>
+        <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} je Spieler</span><span>Strafen werden sofort eingerechnet</span></div>
         <div class="edit-table-wrap">
           <table class="edit-table">
-            <thead><tr><th>Spieler</th><th>Ansage</th><th>Gemacht</th><th>Punkte</th></tr></thead>
+            <thead><tr><th>Spieler</th><th>Ansage</th><th>Gemacht</th><th>Strafen</th><th>Punkte</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -1128,12 +1236,19 @@ document.addEventListener("change", (event) => {
   }
   const bidPlayerId = event.target.dataset.editBid;
   const trickPlayerId = event.target.dataset.editTrick;
+  const penaltyPlayerId = event.target.dataset.editPenaltyPlayer;
+  const penaltyType = event.target.dataset.editPenaltyType;
   if (bidPlayerId && editDraft) {
     editDraft.bids[bidPlayerId] = Number(event.target.value);
     renderRoundEditor();
   }
   if (trickPlayerId && editDraft) {
     editDraft.tricks[trickPlayerId] = Number(event.target.value);
+    renderRoundEditor();
+  }
+  if (penaltyPlayerId && penaltyType && editDraft) {
+    editDraft.penalties[penaltyPlayerId] ??= {};
+    editDraft.penalties[penaltyPlayerId][penaltyType] = event.target.checked;
     renderRoundEditor();
   }
 });
@@ -1230,6 +1345,15 @@ document.addEventListener("click", (event) => {
     case "open-stats":
       openStats();
       break;
+    case "open-details":
+      openDetailsDocument();
+      break;
+    case "close-details":
+      closeDialog(detailsDialog);
+      break;
+    case "print-details":
+      printDetailsDocument();
+      break;
     case "close-stats":
       closeDialog(statsDialog);
       break;
@@ -1286,7 +1410,7 @@ document.addEventListener("click", (event) => {
       break;
     }
     case "edit-current-result":
-      openTrickWizard(true);
+      openRoundEditor(game.currentRoundIndex);
       break;
     case "next-round":
       advanceRound();
@@ -1305,6 +1429,7 @@ document.addEventListener("click", (event) => {
       if (bidsValid && tricksValid) {
         round.bids = { ...editDraft.bids };
         round.tricks = { ...editDraft.tricks };
+        round.penalties = clonePenalties(editDraft.penalties);
         persistGame();
         if (game.status === "finished") archiveCompletedGame(game);
         closeDialog(editDialog);
@@ -1337,6 +1462,7 @@ document.querySelector("#help-button").addEventListener("click", () => {
 });
 document.querySelector("#new-game-button").addEventListener("click", requestNewGame);
 document.querySelector("#lock-button").addEventListener("click", lockApp);
+window.addEventListener("afterprint", () => document.body.classList.remove("printing-details"));
 importFile.addEventListener("change", () => {
   const [file] = importFile.files;
   if (file) importGameFromFile(file);

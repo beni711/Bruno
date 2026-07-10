@@ -7,7 +7,9 @@ import {
   buildRoundSchedule,
   createGame,
   maxCardsForPlayers,
+  penaltyPointsForRound,
   pointsForRound,
+  roundPoints,
   scoreboardForGame,
   validateBids,
   validateTricks,
@@ -68,6 +70,16 @@ test("Treffer und Abweichungen werden korrekt bepunktet", () => {
   assert.equal(pointsForRound(11, 11), 32);
   assert.equal(pointsForRound(2, 1), -2);
   assert.equal(pointsForRound(3, 1), -4);
+});
+
+test("Strafen werden zusätzlich zu den Rundepunkten abgezogen", () => {
+  const round = {
+    bids: { p1: 1 },
+    tricks: { p1: 1 },
+    penalties: { p1: { notTrump: true, tooEarly: true } },
+  };
+  assert.equal(penaltyPointsForRound(round, "p1"), -22);
+  assert.equal(roundPoints(round, "p1"), -10);
 });
 
 test("Gesamtstand und Gleichstand werden korrekt ermittelt", () => {

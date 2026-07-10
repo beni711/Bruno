@@ -715,6 +715,14 @@ h3 {
   font-weight: 900;
 }
 
+.details-button {
+  margin-top: 14px;
+}
+
+.penalty-copy {
+  color: var(--red) !important;
+}
+
 .history-card summary {
   display: flex;
   align-items: center;
@@ -1275,6 +1283,22 @@ dialog::backdrop {
   font-size: 0.7rem;
 }
 
+.penalty-options {
+  min-width: 132px;
+}
+
+.penalty-options label {
+  display: block;
+  margin: 3px 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.penalty-options input {
+  accent-color: var(--green);
+}
+
 .number-select {
   min-width: 68px;
   height: 44px;
@@ -1288,6 +1312,83 @@ dialog::backdrop {
 
 .edit-summary {
   margin-top: 12px;
+}
+
+.document-meta {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.document-meta strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.document-legend {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.detail-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+}
+
+.detail-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.detail-table th,
+.detail-table td {
+  min-width: 116px;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.detail-table thead th,
+.detail-table tfoot th,
+.detail-table tfoot td {
+  background: var(--surface-soft);
+}
+
+.detail-table thead th {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-table tbody th {
+  min-width: 76px;
+}
+
+.detail-table th small,
+.detail-table td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.detail-table td strong {
+  font-size: 0.9rem;
+}
+
+.detail-empty {
+  color: var(--muted);
 }
 
 .toast {
@@ -1356,6 +1457,98 @@ dialog::backdrop {
 }
 
 @media (max-width: 420px) {
+  .app-shell {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(20px, env(safe-area-inset-bottom));
+  }
+
+  .topbar {
+    margin-bottom: 12px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .brand-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .icon-button {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  .setup-panel,
+  .score-card,
+  .history-card {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .setup-title {
+    margin-bottom: 15px;
+    font-size: 1.45rem;
+  }
+
+  .fixed-roster {
+    margin-bottom: 12px;
+  }
+
+  .roster-chips {
+    gap: 6px;
+  }
+
+  .roster-chip {
+    min-height: 40px;
+    gap: 7px;
+    padding: 0 11px;
+    border-radius: 12px;
+  }
+
+  .player-add-form {
+    gap: 8px;
+    margin-bottom: 11px;
+  }
+
+  .text-input,
+  .secondary-button,
+  .primary-button,
+  .ghost-button,
+  .danger-button {
+    min-height: 46px;
+  }
+
+  .player-row {
+    min-height: 48px;
+    padding: 5px 7px;
+  }
+
+  .mixer-picker {
+    margin-top: 12px;
+    padding: 12px;
+  }
+
+  dialog {
+    width: min(calc(100% - 16px), 620px);
+    border-radius: 22px;
+  }
+
+  .dialog-head {
+    padding: 16px 16px 10px;
+  }
+
+  .dialog-content {
+    padding: 0 16px 10px;
+  }
+
+  .dialog-footer {
+    padding: 11px 16px max(16px, env(safe-area-inset-bottom));
+  }
+
   .round-hero {
     grid-template-columns: minmax(0, 1fr) 68px;
   }
@@ -1385,6 +1578,68 @@ dialog::backdrop {
   .dialog-footer.three .ghost-button,
   .dialog-footer.three .secondary-button {
     min-height: 44px;
+  }
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body.printing-details {
+    background: #fff;
+  }
+
+  body.printing-details #app,
+  body.printing-details #wizard-dialog,
+  body.printing-details #edit-dialog,
+  body.printing-details #menu-dialog,
+  body.printing-details #stats-dialog,
+  body.printing-details #help-dialog,
+  body.printing-details #toast {
+    display: none !important;
+  }
+
+  body.printing-details #details-dialog {
+    position: static;
+    display: block !important;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  body.printing-details #details-dialog .dialog-shell {
+    max-height: none;
+  }
+
+  body.printing-details #details-dialog .dialog-content {
+    overflow: visible;
+    padding: 0;
+  }
+
+  body.printing-details #details-dialog .dialog-head {
+    padding: 0 0 12px;
+  }
+
+  body.printing-details #details-dialog .dialog-head .icon-button,
+  body.printing-details #details-dialog .detail-actions {
+    display: none;
+  }
+
+  body.printing-details .detail-table {
+    min-width: 0;
+    font-size: 9pt;
+  }
+
+  body.printing-details .detail-table th,
+  body.printing-details .detail-table td {
+    min-width: 0;
+    padding: 6px;
   }
 }
 

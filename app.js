@@ -679,10 +679,26 @@ function buildGamePdf() {
   const playerWidth = bidWidth + scoreWidth;
   const rounds = roundsForDetailDocument();
   const scores = scoreboardForGame(game).sort((a, b) => a.seatIndex - b.seatIndex);
-  const rows = [...rounds.map((round) => ({ type: "round", round })), { type: "total" }];
+  const paymentByPlayerId = new Map(scores.map((entry) => [
+    entry.id,
+    scores.filter((other) => other.score > entry.score).length * 5,
+  ]));
+  const totalPayments = [...paymentByPlayerId.values()].reduce((sum, value) => sum + value, 0);
+  const averagePayment = totalPayments / game.players.length;
+  const activeFixedPlayers = new Set(game.players
+    .map((player) => canonicalPlayerName(player.name))
+    .filter((name) => FIXED_PLAYERS.includes(name)));
+  const absentFixedPlayers = FIXED_PLAYERS.filter((name) => !activeFixedPlayers.has(name));
+  const euroText = (value) => `${Number.isInteger(value) ? value : value.toFixed(2).replace(".", ",")} EUR`;
+  const rows = [
+    ...rounds.map((round) => ({ type: "round", round })),
+    { type: "total" },
+    { type: "payment" },
+  ];
   const top = 822;
   const headerHeight = 16;
-  const rowHeight = Math.max(18, Math.min(36, Math.floor((top - 22 - headerHeight) / rows.length)));
+  const footerSpace = absentFixedPlayers.length ? 22 : 8;
+  const rowHeight = Math.max(18, Math.min(34, Math.floor((top - 22 - footerSpace - headerHeight) / rows.length)));
   const valueFont = pairedColumns ? 5.6 : 4.9;
   const commands = ["1 g", `0 0 ${pageWidth} ${pageHeight} re f`, "0 g", "0.16 w", "0.12 0.23 0.20 RG"];
   const text = (value, x, y, size) => commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${pdfSafeText(value)}) Tj ET`);
@@ -691,6 +707,12 @@ function buildGamePdf() {
     text(value, x + Math.max(2, (width - estimatedWidth) / 2), y, size);
   };
   const line = (x1, y1, x2, y2) => commands.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+  const crown = (centerX, baseY) => commands.push(
+    "0.82 0.57 0.08 rg",
+    `${(centerX - 6).toFixed(2)} ${baseY.toFixed(2)} m ${(centerX - 6).toFixed(2)} ${(baseY + 5).toFixed(2)} l ${(centerX - 2).toFixed(2)} ${(baseY + 2).toFixed(2)} l ${centerX.toFixed(2)} ${(baseY + 7).toFixed(2)} l ${(centerX + 2).toFixed(2)} ${(baseY + 2).toFixed(2)} l ${(centerX + 6).toFixed(2)} ${(baseY + 5).toFixed(2)} l ${(centerX + 6).toFixed(2)} ${baseY.toFixed(2)} l h f`,
+    `${(centerX - 6).toFixed(2)} ${(baseY - 1.2).toFixed(2)} 12 1.2 re f`,
+    "0 g",
+  );
   const tableBottom = top - headerHeight - (rows.length * rowHeight);
   const playerStart = margin + cardWidth;
   const playerEnd = playerStart + (game.players.length * playerWidth);
@@ -704,7 +726,8 @@ function buildGamePdf() {
   );
   centeredText("Karte", margin, cardWidth, top - 11, 7);
   game.players.forEach((player, index) => {
-    centeredText(initials(player.name), playerStart + (index * playerWidth), playerWidth, top - 11, 7);
+    const x = playerStart + (index * playerWidth);
+    centeredText(initials(player.name), x, playerWidth, top - 11, 6.4);
   });
   centeredText("Strafen", penaltiesStart, penaltyWidth, top - 11, 7);
   line(margin, top, playerEnd, top);
@@ -724,14 +747,17 @@ function buildGamePdf() {
   let y = top - headerHeight;
   rows.forEach((entry) => {
     const total = entry.type === "total";
-    if (total) commands.push(
-      "0.94 g",
+    const payment = entry.type === "payment";
+    if (total || payment) commands.push(
+      payment ? "0.97 0.93 0.81 rg" : "0.94 g",
       `${margin} ${y - rowHeight} ${playerEnd - margin} ${rowHeight} re f`,
       `${penaltiesStart} ${y - rowHeight} ${penaltyWidth} ${rowHeight} re f`,
       "0 g",
     );
     if (total) {
       centeredText("Gesamt", margin, cardWidth, y - (rowHeight * 0.62), 6.6);
+    } else if (payment) {
+      centeredText("EUR", margin, cardWidth, y - (rowHeight * 0.62), 6.2);
     } else {
       centeredText(String(entry.round.cards), margin, cardWidth, y - (rowHeight * 0.62), 7);
     }
@@ -741,6 +767,15 @@ function buildGamePdf() {
       if (total) {
         const totalText = String(scores[index].score);
         centeredText(totalText, playerX, playerWidth, y - (rowHeight * 0.62), valueFont + 0.5);
+        return;
+      }
+      if (payment) {
+        const amount = paymentByPlayerId.get(player.id);
+        if (amount === 0) {
+          crown(playerX + (playerWidth / 2), y - (rowHeight * 0.58));
+        } else {
+          centeredText(euroText(amount), playerX, playerWidth, y - (rowHeight * 0.62), 4.8);
+        }
         return;
       }
       const bid = entry.round.bids?.[player.id];
@@ -756,7 +791,7 @@ function buildGamePdf() {
         centeredText(`${Number.isInteger(bid) ? bid : "-"}/${runningScore}`, playerX, playerWidth, y - (rowHeight * 0.62), valueFont);
       }
     });
-    if (!total) {
+    if (!total && !payment) {
       const penaltyText = penaltyEntriesForRound(entry.round).join(" | ");
       text(pdfTruncate(penaltyText, Math.max(5, Math.floor(penaltyWidth / 4.2))), penaltiesStart + 3, y - (rowHeight * 0.62), 5.4);
     }
@@ -764,6 +799,11 @@ function buildGamePdf() {
     line(penaltiesStart, y - rowHeight, pageWidth - margin, y - rowHeight);
     y -= rowHeight;
   });
+
+  if (absentFixedPlayers.length) {
+    const absentPayments = absentFixedPlayers.map((name) => `${name} ${euroText(averagePayment)}`).join(" | ");
+    text(pdfTruncate(`Nicht dabei: ${absentPayments} | Durchschnitt ${euroText(averagePayment)}`, 150), margin + 2, tableBottom - 14, 5.8);
+  }
 
   const stream = commands.join("\n");
   const objects = [

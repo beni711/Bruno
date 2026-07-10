@@ -370,8 +370,11 @@ function loadArchive() {
     const raw = localStorage.getItem(ARCHIVE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEYS.archive) ?? "[]";
     const parsed = JSON.parse(raw);
     const migrated = Array.isArray(parsed) ? parsed.map(migrateGameRoster) : [];
-    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(migrated));
-    return migrated.filter((entry) => isGameShapeValid(entry) && entry.status === "finished");
+    const archive = migrated
+      .filter((entry) => isGameShapeValid(entry) && entry.status === "finished")
+      .sort((a, b) => String(b.finishedAt ?? b.updatedAt).localeCompare(String(a.finishedAt ?? a.updatedAt)));
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
+    return archive;
   } catch {
     return [];
   }
@@ -1231,21 +1234,40 @@ function renderStatsDialog() {
       <td>${entry.rounds ? `${Math.round((entry.exactRounds / entry.rounds) * 100)} %` : "–"}</td>
     </tr>`).join("");
 
-  const games = archivedGames.map((archivedGame) => {
+  const games = archivedGames.map((archivedGame, gameIndex) => {
     const scoreboard = scoreboardForGame(archivedGame).sort((a, b) => b.score - a.score || a.seatIndex - b.seatIndex);
     const bestScore = Math.max(...scoreboard.map((entry) => entry.score));
-    const winnerNames = scoreboard.filter((entry) => entry.score === bestScore).map((entry) => entry.name).join(" & ");
+    const winners = scoreboard.filter((entry) => entry.score === bestScore);
+    const winnerNames = winners.map((entry) => entry.name).join(" & ");
+    let previousScore = null;
+    let previousRank = 0;
+    const ranking = scoreboard.map((entry, index) => {
+      const rank = previousScore === entry.score ? previousRank : index + 1;
+      previousScore = entry.score;
+      previousRank = rank;
+      return `
+        <li class="archive-ranking-row ${rank === 1 ? "winner" : ""}">
+          <span><b>${rank}.</b> ${escapeHtml(entry.name)}</span>
+          <strong>${entry.score} Punkte</strong>
+        </li>`;
+    }).join("");
+    const gameNumber = archivedGames.length - gameIndex;
     return `
       <li class="archive-game">
-        <div><strong>${escapeHtml(winnerNames)}${scoreboard.filter((entry) => entry.score === bestScore).length === 1 ? " gewinnt" : " gewinnen"}</strong><small>${formatGameDate(archivedGame.finishedAt ?? archivedGame.updatedAt)} · ${archivedGame.rounds.length} Runden</small></div>
-        <span>${scoreboard.map((entry) => `${escapeHtml(entry.name)} ${entry.score}`).join(" · ")}</span>
+        <div class="archive-game-head">
+          <span class="archive-game-number">Spiel ${gameNumber}</span>
+          <small>${formatGameDate(archivedGame.finishedAt ?? archivedGame.updatedAt)}</small>
+        </div>
+        <strong class="archive-winner"><span aria-hidden="true">♛</span> ${escapeHtml(winnerNames)} ${winners.length === 1 ? "gewinnt" : "gewinnen"}</strong>
+        <small class="archive-game-meta">${scoreboard.length} Spieler · ${archivedGame.rounds.length} Runden</small>
+        <ol class="archive-ranking">${ranking}</ol>
       </li>`;
   }).join("");
 
   statsContent.innerHTML = `
     <div class="dialog-shell">
       <div class="dialog-head">
-        <div><span class="eyebrow">Langzeitwertung</span><h2 id="stats-title">Alle Spiele</h2></div>
+        <div><span class="eyebrow">Spielarchiv</span><h2 id="stats-title">Vergangene Spiele</h2></div>
         <button class="icon-button" type="button" data-action="close-stats" aria-label="Statistik schließen">×</button>
       </div>
       <div class="dialog-content">
@@ -1254,16 +1276,19 @@ function renderStatsDialog() {
           <div class="preview-stat"><strong>${activePlayers}</strong><span>Spieler</span></div>
           <div class="preview-stat"><strong>${statistics.totalRounds}</strong><span>Runden</span></div>
         </div>
-        <div class="stats-table-wrap">
-          <table class="stats-table">
-            <thead><tr><th>Spieler</th><th>Sp.</th><th>Siege</th><th>Punkte</th><th>Ø</th><th>Treffer</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-        <p class="scroll-hint">Auf kleinen Bildschirmen die Tabelle seitlich wischen.</p>
         <section class="archive-section">
-          <h3>Abgeschlossene Partien</h3>
+          <div class="archive-section-head"><h3>Abgeschlossene Partien</h3><small>Neueste zuerst</small></div>
           ${games ? `<ol class="archive-list">${games}</ol>` : '<div class="empty-players">Noch keine Partie abgeschlossen.</div>'}
+        </section>
+        <section class="stats-section">
+          <h3>Gesamtstatistik</h3>
+          <div class="stats-table-wrap">
+            <table class="stats-table">
+              <thead><tr><th>Spieler</th><th>Sp.</th><th>Siege</th><th>Punkte</th><th>Ø</th><th>Treffer</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <p class="scroll-hint">Auf kleinen Bildschirmen die Tabelle seitlich wischen.</p>
         </section>
       </div>
       <div class="dialog-footer">

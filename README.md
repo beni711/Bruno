@@ -2,7 +2,7 @@
 
 Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten beim Kartenspiel **Bruno**.
 
-Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert die laufende Partie über Firebase, speichert zusätzlich lokal, enthält die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, erlaubt Gäste und führt eine Langzeitstatistik aller abgeschlossenen Partien.
+Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert die laufende Partie über Firebase, speichert zusätzlich lokal, enthält die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, erlaubt Gäste und führt eine Langzeitstatistik aller abgeschlossenen Partien. Unter **Menü → Vergangene Spiele** stehen die Partien – neueste zuerst – jeweils mit Datum, Gewinner, Spielerzahl, Rundenzahl und vollständigem Endstand.
 
 ## Enthaltene Regeln
 

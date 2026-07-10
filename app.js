@@ -1742,8 +1742,16 @@ wizardDialog.addEventListener("cancel", (event) => {
 });
 
 if ("serviceWorker" in navigator) {
+  let refreshingForUpdate = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshingForUpdate) return;
+    refreshingForUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js")
+      .then((registration) => registration.update())
+      .catch(() => {});
   });
 }
 

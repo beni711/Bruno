@@ -668,8 +668,8 @@ function buildLegacyGamePdf() {
 }
 
 function buildGamePdf() {
-  const pageWidth = 842;
-  const pageHeight = 595;
+  const pageWidth = 595;
+  const pageHeight = 842;
   const margin = 20;
   const cardWidth = 24;
   const penaltyWidth = 92;
@@ -680,9 +680,9 @@ function buildGamePdf() {
   const rounds = roundsForDetailDocument();
   const scores = scoreboardForGame(game).sort((a, b) => a.seatIndex - b.seatIndex);
   const rows = [...rounds.map((round) => ({ type: "round", round })), { type: "total" }];
-  const top = 574;
+  const top = 822;
   const headerHeight = 16;
-  const rowHeight = Math.max(18, Math.min(25, Math.floor((top - 18 - headerHeight) / rows.length)));
+  const rowHeight = Math.max(18, Math.min(36, Math.floor((top - 22 - headerHeight) / rows.length)));
   const valueFont = pairedColumns ? 5.6 : 4.9;
   const commands = ["1 g", `0 0 ${pageWidth} ${pageHeight} re f`, "0 g", "0.16 w", "0.12 0.23 0.20 RG"];
   const text = (value, x, y, size) => commands.push(`BT /F1 ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${pdfSafeText(value)}) Tj ET`);
@@ -694,7 +694,7 @@ function buildGamePdf() {
   const tableBottom = top - headerHeight - (rows.length * rowHeight);
   const playerStart = margin + cardWidth;
   const playerEnd = playerStart + (game.players.length * playerWidth);
-  const penaltiesStart = Math.max(playerEnd + 22, pageWidth - margin - penaltyWidth);
+  const penaltiesStart = playerEnd;
 
   commands.push(
     "0.92 g",

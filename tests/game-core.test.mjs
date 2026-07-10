@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  autoFillRemainingTricks,
   biddingOrderForRound,
   buildRoundSchedule,
   createGame,
@@ -40,12 +41,24 @@ test("Ansagensumme darf nicht der Anzahl möglicher Stiche entsprechen", () => {
   assert.equal(validateBids({ p1: 1, p2: 1 }, ids, 2).reason, "missing");
 });
 
-test("Tatsächliche Ergebnisse werden unabhängig voneinander erfasst", () => {
+test("Tatsächliche Ergebnisse müssen alle verfügbaren Stiche verteilen", () => {
   const ids = ["p1", "p2", "p3"];
   assert.equal(validateTricks({ p1: 0, p2: 1, p3: 1 }, ids, 2).valid, true);
-  assert.equal(validateTricks({ p1: 0, p2: 0, p3: 1 }, ids, 2).valid, true);
-  assert.equal(validateTricks({ p1: 0, p2: 0, p3: 0 }, ids, 1).valid, true);
+  assert.deepEqual(validateTricks({ p1: 0, p2: 0, p3: 1 }, ids, 2), { valid: false, reason: "total", total: 1 });
+  assert.deepEqual(validateTricks({ p1: 1, p2: 1, p3: 1 }, ids, 2), { valid: false, reason: "total", total: 3 });
   assert.equal(validateTricks({ p1: 0, p2: 0 }, ids, 2).reason, "missing");
+});
+
+test("Sind alle Stiche verteilt, werden offene Ergebnisse automatisch 0", () => {
+  const ids = ["p1", "p2", "p3", "p4"];
+  assert.deepEqual(autoFillRemainingTricks({ p1: 1, p2: 1 }, ids, 1, 2), {
+    tricks: { p1: 1, p2: 1, p3: 0, p4: 0 },
+    filledPlayerIds: ["p3", "p4"],
+  });
+  assert.deepEqual(autoFillRemainingTricks({ p1: 1 }, ids, 0, 2), {
+    tricks: { p1: 1 },
+    filledPlayerIds: [],
+  });
 });
 
 test("Treffer und Abweichungen werden korrekt bepunktet", () => {

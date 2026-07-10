@@ -78,7 +78,27 @@ export function validateTricks(tricks, playerIds, cards) {
   }
 
   const total = sumValues(tricks, playerIds);
+  if (total !== cards) {
+    return { valid: false, reason: "total", total };
+  }
+
   return { valid: true, reason: null, total };
+}
+
+export function autoFillRemainingTricks(tricks, orderedPlayerIds, currentIndex, cards) {
+  const values = { ...tricks };
+  const filledPlayerIds = [];
+  if (sumValues(values, orderedPlayerIds) !== cards) {
+    return { tricks: values, filledPlayerIds };
+  }
+
+  for (const playerId of orderedPlayerIds.slice(currentIndex + 1)) {
+    if (Number.isInteger(values[playerId])) continue;
+    values[playerId] = 0;
+    filledPlayerIds.push(playerId);
+  }
+
+  return { tricks: values, filledPlayerIds };
 }
 
 export function createGame(playerNames, options = {}) {

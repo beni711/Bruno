@@ -11,7 +11,7 @@ Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf 
 - Rundenfolge von 1 bis zum Maximum und wieder zurück auf 1; der Höchstwert wird einmal gespielt.
 - In Ein-Karten-Runden bleibt die Aufdeckkarte verdeckt, sonst wird die nächste Karte als Trumpf aufgedeckt.
 - Die Summe aller Ansagen darf nicht genau der Anzahl möglicher Stiche entsprechen.
-- Bei der Auswertung werden die tatsächlich gemachten Stiche frei und unabhängig eingetragen.
+- Bei der Auswertung müssen die tatsächlich gemachten Stiche zusammen genau der Kartenanzahl entsprechen. Sobald alle Stiche verteilt sind, werden noch offene Spieler automatisch mit 0 eingetragen.
 - Exakt erfüllt: `10 + 2 × Ansage`; nicht erfüllt: `−2 × Abweichung`.
 - Vor dem Spiel wird ausgewählt, wer zuerst mischt. Der Mischer wechselt danach jede Runde im Kreis. Die Person direkt danach beginnt mit dem Ansagen; der Mischer sagt zuletzt an.
 

@@ -1,6 +1,7 @@
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
+  autoFillRemainingTricks,
   biddingOrderForRound,
   createGame,
   isGameShapeValid,
@@ -38,8 +39,8 @@ const toast = document.querySelector("#toast");
 let game = loadSavedGame();
 let archivedGames = loadArchive();
 const savedSetup = loadSetupState();
-let setupPlayers = game ? [] : savedSetup.players;
-let setupStartingMixerName = game ? null : savedSetup.startingMixerName;
+let setupPlayers = savedSetup.players;
+let setupStartingMixerName = savedSetup.startingMixerName;
 let bidWizard = null;
 let trickWizard = null;
 let editDraft = null;
@@ -101,6 +102,23 @@ function normalizedProfileId(name) {
   return `guest:${encodeURIComponent(cleaned.toLocaleLowerCase("de-DE"))}`;
 }
 
+function canonicalPlayerName(name) {
+  const cleaned = String(name).trim();
+  return FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE")) ?? cleaned;
+}
+
+function normalizeSetupPlayers(players) {
+  const normalized = [];
+  for (const name of Array.isArray(players) ? players : []) {
+    const cleaned = canonicalPlayerName(name);
+    const duplicate = normalized.some((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"));
+    if (!cleaned || duplicate) continue;
+    normalized.push(cleaned);
+    if (normalized.length === MAX_PLAYERS) break;
+  }
+  return normalized;
+}
+
 function archiveCompletedGame(completedGame) {
   if (!completedGame || completedGame.status !== "finished") return;
   const snapshot = structuredClone(completedGame);
@@ -129,11 +147,8 @@ function loadSavedGame() {
 function loadSetupState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SETUP_KEY) ?? "[]");
-    const players = (Array.isArray(parsed) ? parsed : parsed.players ?? [])
-      .map((name) => String(name))
-      .filter(Boolean)
-      .slice(0, MAX_PLAYERS);
-    const requestedMixer = Array.isArray(parsed) ? null : String(parsed.startingMixerName ?? "");
+    const players = normalizeSetupPlayers(Array.isArray(parsed) ? parsed : parsed.players);
+    const requestedMixer = Array.isArray(parsed) ? null : canonicalPlayerName(parsed.startingMixerName ?? "");
     return {
       players,
       startingMixerName: players.includes(requestedMixer) ? requestedMixer : (players[0] ?? null),
@@ -295,12 +310,6 @@ function renderSetup() {
   app.innerHTML = `
     ${brandMarkup(false)}
     <main>
-      <section class="setup-hero">
-        <div class="elevator-art">hoch · runter</div>
-        <h1>Euer Spielleiter für Aufzug.</h1>
-        <p>Spieler eintragen, Stiche ansagen und Punkte automatisch zählen. Ohne Login, Werbung oder fremde Mitspieler.</p>
-      </section>
-
       <section class="setup-panel">
         <div class="section-head">
           <div>
@@ -310,20 +319,21 @@ function renderSetup() {
         </div>
 
         <div class="fixed-roster">
-          <span class="field-label">Fester Spielerkreis</span>
-          <p class="roster-help">Für den heutigen Spieltag an- oder abwählen.</p>
+          <span class="field-label">Feste Spieler – heute auswählen</span>
+          <p class="roster-help">Die Namen bleiben dauerhaft erhalten. Antippen wählt sie für heute an oder ab.</p>
           <div class="roster-chips">${fixedPlayerButtons}</div>
         </div>
 
         <form id="add-player-form" class="player-add-form" autocomplete="off">
           <label class="sr-only" for="player-name-input">Gastname</label>
-          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Gastname eingeben" ${count >= MAX_PLAYERS ? "disabled" : ""}>
+          <input id="player-name-input" class="text-input" name="playerName" maxlength="24" placeholder="Gast hinzufügen" ${count >= MAX_PLAYERS ? "disabled" : ""}>
           <button class="secondary-button" type="submit" ${count >= MAX_PLAYERS ? "disabled" : ""}>Gast hinzufügen</button>
         </form>
 
+        <span class="field-label selected-players-label">Heute dabei</span>
         ${count
           ? `<ol class="player-list">${playerRows}</ol>`
-          : '<div class="empty-players">Noch keine Spieler eingetragen.</div>'}
+          : '<div class="empty-players">Noch niemand für heute ausgewählt.</div>'}
 
         ${count ? `
           <div class="mixer-picker">
@@ -338,7 +348,6 @@ function renderSetup() {
           <div class="preview-stat"><strong>${totalRounds ?? "–"}</strong><span>Spielrunden</span></div>
         </div>
 
-        <div class="setup-note">Die Reihenfolge ist die Sitzreihenfolge. Der Mischer wechselt nach jeder Runde im Kreis. Die Person direkt danach beginnt mit dem Ansagen; der Mischer sagt zuletzt an.</div>
         <div class="action-row">
           <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>Partie starten</button>
           <button class="secondary-button full-width" type="button" data-action="open-stats">Alle Spiele auswerten (${archivedGames.length})</button>
@@ -668,13 +677,11 @@ function renderFinished() {
 }
 
 function addPlayer(name) {
-  let cleaned = String(name).trim();
+  const cleaned = canonicalPlayerName(name);
   if (!cleaned) {
     showToast("Bitte einen Namen eingeben.");
     return false;
   }
-  const fixedMatch = FIXED_PLAYERS.find((entry) => entry.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"));
-  if (fixedMatch) cleaned = fixedMatch;
   if (setupPlayers.some((player) => player.toLocaleLowerCase("de-DE") === cleaned.toLocaleLowerCase("de-DE"))) {
     showToast("Dieser Name ist bereits eingetragen.");
     return false;
@@ -738,8 +745,9 @@ function previousValuesList(order, values, step, type, round) {
   return order.map((playerIndex, index) => {
     const player = game.players[playerIndex];
     const value = values[player.id];
+    const wasAutoFilled = type === "tricks" && trickWizard?.autoFilledPlayerIds?.includes(player.id);
     const detail = type === "tricks" && Number.isInteger(value)
-      ? `Ansage ${round.bids[player.id]} · ${value === round.bids[player.id] ? "richtig" : "daneben"}`
+      ? `Ansage ${round.bids[player.id]} · ${value === round.bids[player.id] ? "richtig" : "daneben"}${wasAutoFilled ? " · automatisch 0" : ""}`
       : index === 0 ? "beginnt die Ansage" : index === order.length - 1 ? "mischt · sagt zuletzt an" : "";
     return `
       <li class="${index === step ? "current" : ""}">
@@ -812,6 +820,7 @@ function openTrickWizard(startAtBeginning = false) {
     step: startAtBeginning ? 0 : firstMissingStep(round.tricks, order),
     restoreOnCancel: round.phase === "result",
     originalTricks: round.phase === "result" ? { ...round.tricks } : null,
+    autoFilledPlayerIds: [],
   };
   renderTrickWizard();
   openDialog(wizardDialog);
@@ -824,13 +833,23 @@ function renderTrickWizard() {
   const player = game.players[playerIndex];
   const selected = round.tricks[player.id];
   const isLast = trickWizard.step === order.length - 1;
+  const orderedPlayerIds = order.map((index) => game.players[index].id);
+  const otherTotal = orderedPlayerIds
+    .filter((playerId) => playerId !== player.id)
+    .reduce((sum, playerId) => sum + (Number.isInteger(round.tricks[playerId]) ? round.tricks[playerId] : 0), 0);
+  const maxAllowed = round.cards - otherTotal;
+  const total = sumValues(round.tricks, orderedPlayerIds);
+  const remaining = round.cards - total;
   const validation = validateTricks(round.tricks, playerIds(), round.cards);
   const predictedPoints = Number.isInteger(selected) ? pointsForRound(round.bids[player.id], selected) : 0;
   const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
 
   const numberButtons = Array.from(
     { length: round.cards + 1 },
-    (_, value) => `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-trick-value="${value}">${value}</button>`,
+    (_, value) => {
+      const disabled = value > maxAllowed;
+      return `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-trick-value="${value}" ${disabled ? "disabled" : ""} aria-label="${value} Stiche${disabled ? ", nicht mehr verfügbar" : ""}">${value}</button>`;
+    },
   ).join("");
 
   wizardContent.innerHTML = `
@@ -845,7 +864,14 @@ function renderTrickWizard() {
         <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
         <div class="bid-context"><span>Ansage: ${round.bids[player.id]}</span><span>${Number.isInteger(selected) ? (selected === round.bids[player.id] ? `Treffer · +${predictedPoints}` : `Daneben · ${predictedPoints}`) : "Ergebnis wählen"}</span></div>
         <div class="number-grid">${numberButtons}</div>
-        <div class="inline-notice">Trage das tatsächliche Ergebnis ein. Bei der Auswertung ist kein Wert gesperrt oder automatisch vorgegeben.</div>
+        <div class="total-panel">
+          <div class="total-stat"><strong>${total}</strong><span>Stiche eingetragen</span></div>
+          <div class="total-stat"><strong>${Math.max(0, remaining)}</strong><span>Stiche noch offen</span></div>
+        </div>
+        ${total === round.cards
+          ? '<div class="success-box">Alle Stiche sind verteilt. Noch offene Spieler wurden automatisch mit 0 Stichen eingetragen.</div>'
+          : `<div class="inline-notice">Noch <strong>${Math.max(0, remaining)}</strong> ${remaining === 1 ? "Stich muss" : "Stiche müssen"} auf die offenen Spieler verteilt werden.</div>`}
+        ${validation.reason === "total" && isLast ? `<div class="warning-box">Insgesamt müssen genau ${round.cards} Stiche eingetragen sein.</div>` : ""}
         <ul class="previous-values">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
       </div>
       <div class="dialog-footer three">
@@ -915,7 +941,8 @@ function renderRoundEditor() {
 
   const issues = [
     !bidValidation.valid ? `Ansagen gesamt: ${bidValidation.total}. Die Summe darf nicht genau ${round.cards} sein.` : "",
-    !trickValidation.valid ? "Bitte für jeden Spieler das tatsächliche Ergebnis eintragen." : "",
+    trickValidation.reason === "missing" ? "Bitte für jeden Spieler das tatsächliche Ergebnis eintragen." : "",
+    trickValidation.reason === "total" ? `Tatsächliche Stiche gesamt: ${trickValidation.total}. Es müssen genau ${round.cards} sein.` : "",
   ].filter(Boolean).join(" ");
 
   editContent.innerHTML = `
@@ -998,8 +1025,9 @@ async function importGameFromFile(file) {
         if (game.status === "finished") archiveCompletedGame(game);
       }
       if (parsed.setup && Array.isArray(parsed.setup.players)) {
-        setupPlayers = parsed.setup.players.map((name) => String(name)).filter(Boolean).slice(0, MAX_PLAYERS);
-        setupStartingMixerName = setupPlayers.includes(parsed.setup.startingMixerName) ? parsed.setup.startingMixerName : (setupPlayers[0] ?? null);
+        setupPlayers = normalizeSetupPlayers(parsed.setup.players);
+        const requestedMixer = canonicalPlayerName(parsed.setup.startingMixerName ?? "");
+        setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
         persistSetup();
       }
     } else if (isGameShapeValid(parsed)) {
@@ -1153,7 +1181,23 @@ document.addEventListener("click", (event) => {
     const round = game.rounds[trickWizard.roundIndex];
     const order = biddingOrder(trickWizard.roundIndex);
     const player = game.players[order[trickWizard.step]];
+    const orderedPlayerIds = order.map((playerIndex) => game.players[playerIndex].id);
+
+    const autoFilled = new Set(trickWizard.autoFilledPlayerIds ?? []);
+    for (const playerId of orderedPlayerIds.slice(trickWizard.step + 1)) {
+      if (!autoFilled.has(playerId)) continue;
+      delete round.tricks[playerId];
+      autoFilled.delete(playerId);
+    }
+    autoFilled.delete(player.id);
     round.tricks[player.id] = Number(button.dataset.trickValue);
+
+    const completed = autoFillRemainingTricks(round.tricks, orderedPlayerIds, trickWizard.step, round.cards);
+    round.tricks = completed.tricks;
+    for (const playerId of completed.filledPlayerIds) autoFilled.add(playerId);
+    trickWizard.autoFilledPlayerIds = [...autoFilled];
+    if (completed.filledPlayerIds.length) trickWizard.step = order.length - 1;
+
     persistGame();
     renderTrickWizard();
     return;

@@ -2,7 +2,7 @@
 
 Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten beim Kartenspiel **Bruno**.
 
-Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf demselben Gerät, die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, frei ergänzbare Gäste und eine Langzeitstatistik aller abgeschlossenen Partien.
+Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert die laufende Partie über Firebase, speichert zusätzlich lokal, enthält die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, erlaubt Gäste und führt eine Langzeitstatistik aller abgeschlossenen Partien.
 
 ## Enthaltene Regeln
 
@@ -31,8 +31,8 @@ Danach `http://localhost:4173` öffnen. Ein direkter Doppelklick auf `index.html
 
 ## Online bereitstellen
 
-Der gesamte Ordner kann unverändert auf einem statischen HTTPS-Webspace veröffentlicht werden, beispielsweise mit GitHub Pages. Es gibt kein Backend, kein Login, keine Werbung und keine Analyse-Skripte. Der Spielstand bleibt ausschließlich im Browser des Spielleiter-Geräts und wird automatisch gespeichert.
+Der gesamte Ordner kann auf einem statischen HTTPS-Webspace wie GitHub Pages veröffentlicht werden. Die Firebase Realtime Database übernimmt die Online-Synchronisierung; ein persönliches Login, Werbung und Analyse-Skripte werden nicht verwendet.
 
 ## Datenschutz und Sicherung
 
-Die App sendet keine Spiel- oder Namensdaten an einen Server. Über **Menü → Gesamtsicherung exportieren** lassen sich laufende Partie, Spielarchiv und Spielerauswahl als JSON-Datei sichern und auf demselben oder einem anderen Gerät wieder importieren. Der gemeinsame Code wird nicht exportiert.
+Spielstand, Spielernamen, Auswahl und Spielarchiv werden unter der Sitzung `111111` in der Firebase Realtime Database gespeichert. Eine lokale Kopie bleibt als Offline-Ausfallsicherung bestehen. Über **Menü → Gesamtsicherung exportieren** lassen sich laufende Partie, Spielarchiv und Spielerauswahl zusätzlich als JSON-Datei sichern und wieder importieren. Die empfohlenen Datenbankregeln stehen in `firebase-rules.json`.

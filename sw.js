@@ -1,4 +1,4 @@
-const CACHE_NAME = "bruno-v17";
+const CACHE_NAME = "bruno-v18";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -25,7 +25,8 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+  if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)

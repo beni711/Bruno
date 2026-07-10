@@ -20,8 +20,14 @@ const STORAGE_KEY = "bruno.game.v1";
 const SETUP_KEY = "bruno.setup.v1";
 const ARCHIVE_KEY = "bruno.archive.v1";
 const ACCESS_SESSION_KEY = "bruno.access.unlocked.v1";
-const ACCESS_CODE_DIGEST = "5e92aa39e70cb2253bcd77f2b0000e9a764124460c48e8fffc7457f7d7b880d4";
+const DEVICE_ID_KEY = "bruno.device.v1";
+const ACCESS_CODE_DIGEST = "3313fb138656f2af91ece4899d6543823b6eeabe8f363fcea0542b777190bb07";
 const ACCESS_CODE_SALT = "bruno-shared-code-v1:";
+const ONLINE_SESSION_CODE = "111111";
+const FIREBASE_DATABASE_URL = "https://bruno-bd32a-default-rtdb.europe-west1.firebasedatabase.app";
+const ONLINE_SESSION_URL = `${FIREBASE_DATABASE_URL}/sessions/${ONLINE_SESSION_CODE}.json`;
+const ONLINE_SESSION_VERSION = 1;
+const ONLINE_POLL_INTERVAL = 5000;
 const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
 const LEGACY_STORAGE_KEYS = {
   game: "aufzug.game.v1",
@@ -70,6 +76,16 @@ let editDraft = null;
 let toastTimer = null;
 let accessError = "";
 let appUnlocked = readSessionUnlock();
+const deviceId = readDeviceId();
+let onlineStatus = "connecting";
+let onlineReady = false;
+let onlineRevision = 0;
+let onlineGameClearedAt = 0;
+let onlinePollTimer = null;
+let onlineWriteTimer = null;
+let onlineWriteInFlight = false;
+let onlineWriteQueued = false;
+let onlineInitialization = null;
 
 if (game?.status === "finished") archiveCompletedGame(game);
 
@@ -108,6 +124,227 @@ function clonePenalties(penalties = {}) {
   return Object.fromEntries(Object.entries(penalties).map(([playerId, values]) => [playerId, { ...values }]));
 }
 
+function readDeviceId() {
+  try {
+    const saved = localStorage.getItem(DEVICE_ID_KEY);
+    if (saved) return saved;
+    const id = globalThis.crypto?.randomUUID?.() ?? `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_ID_KEY, id);
+    return id;
+  } catch {
+    return `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function onlineStatusText() {
+  const labels = {
+    connecting: `${ONLINE_SESSION_CODE} · verbindet`,
+    saving: `${ONLINE_SESSION_CODE} · speichert`,
+    saved: `${ONLINE_SESSION_CODE} · online`,
+    offline: `${ONLINE_SESSION_CODE} · nur lokal`,
+  };
+  return labels[onlineStatus] ?? labels.connecting;
+}
+
+function setOnlineStatus(status) {
+  onlineStatus = status;
+  document.querySelectorAll("[data-online-status]").forEach((element) => {
+    element.textContent = onlineStatusText();
+    element.dataset.state = status;
+  });
+}
+
+function remoteSetupSnapshot() {
+  return {
+    players: [...setupPlayers],
+    startingMixerName: setupStartingMixerName,
+  };
+}
+
+function remoteSessionPayload(revision) {
+  return {
+    version: ONLINE_SESSION_VERSION,
+    code: ONLINE_SESSION_CODE,
+    updatedAt: revision,
+    updatedBy: deviceId,
+    clearedAt: game ? 0 : onlineGameClearedAt,
+    game: game ? structuredClone(game) : null,
+    setup: remoteSetupSnapshot(),
+    archivedGames: structuredClone(archivedGames),
+  };
+}
+
+function gameTimestamp(savedGame) {
+  const value = Date.parse(savedGame?.updatedAt ?? savedGame?.createdAt ?? "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function mergeGameArchives(first, second) {
+  const merged = new Map();
+  for (const entry of [...first, ...second]) {
+    const migrated = migrateGameRoster(entry);
+    if (!isGameShapeValid(migrated) || migrated.status !== "finished") continue;
+    const existing = merged.get(migrated.gameId);
+    if (!existing || String(migrated.updatedAt ?? migrated.finishedAt ?? "") >= String(existing.updatedAt ?? existing.finishedAt ?? "")) {
+      merged.set(migrated.gameId, migrated);
+    }
+  }
+  return [...merged.values()].sort((a, b) => String(b.finishedAt ?? b.updatedAt).localeCompare(String(a.finishedAt ?? a.updatedAt)));
+}
+
+function saveRemoteStateLocally(snapshot) {
+  const remoteGame = migrateGameRoster(snapshot?.game);
+  const remoteGameValid = remoteGame && isGameShapeValid(remoteGame);
+  if (remoteGameValid) {
+    game = remoteGame;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
+  } else {
+    game = null;
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  onlineGameClearedAt = Number(snapshot?.clearedAt) || 0;
+
+  if (snapshot?.setup && Array.isArray(snapshot.setup.players)) {
+    setupPlayers = normalizeSetupPlayers(snapshot.setup.players);
+    const requestedMixer = canonicalPlayerName(snapshot.setup.startingMixerName ?? "");
+    setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
+    localStorage.setItem(SETUP_KEY, JSON.stringify(remoteSetupSnapshot()));
+  }
+
+  archivedGames = mergeGameArchives(archivedGames, Array.isArray(snapshot?.archivedGames) ? snapshot.archivedGames : []);
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archivedGames));
+  if (game?.status === "finished") archiveCompletedGame(game);
+}
+
+async function fetchOnlineSession() {
+  const response = await fetch(ONLINE_SESSION_URL, {
+    method: "GET",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`Online-Sitzung nicht erreichbar (${response.status}).`);
+  return response.json();
+}
+
+async function writeOnlineSession() {
+  if (!onlineReady || !appUnlocked) return;
+  if (onlineWriteInFlight) {
+    onlineWriteQueued = true;
+    return;
+  }
+  onlineWriteInFlight = true;
+  onlineWriteQueued = false;
+  setOnlineStatus("saving");
+  const revision = Math.max(Date.now(), onlineRevision + 1);
+  try {
+    const response = await fetch(ONLINE_SESSION_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(remoteSessionPayload(revision)),
+    });
+    if (!response.ok) throw new Error(`Online-Speicherung fehlgeschlagen (${response.status}).`);
+    onlineRevision = revision;
+    setOnlineStatus("saved");
+  } catch {
+    setOnlineStatus("offline");
+    onlineWriteQueued = true;
+  } finally {
+    onlineWriteInFlight = false;
+    if (onlineWriteQueued) {
+      onlineWriteQueued = false;
+      window.setTimeout(() => writeOnlineSession(), onlineStatus === "offline" ? 10000 : 1200);
+    }
+  }
+}
+
+function queueOnlineSync(delay = 300) {
+  if (!onlineReady || !appUnlocked) return;
+  window.clearTimeout(onlineWriteTimer);
+  setOnlineStatus("saving");
+  onlineWriteTimer = window.setTimeout(() => writeOnlineSession(), delay);
+}
+
+function onlineDialogsAreOpen() {
+  return wizardDialog.open || editDialog.open;
+}
+
+async function refreshOnlineSession() {
+  if (!appUnlocked || onlineWriteInFlight || onlineDialogsAreOpen()) return;
+  try {
+    const snapshot = await fetchOnlineSession();
+    const revision = Number(snapshot?.updatedAt) || 0;
+    if (!snapshot || snapshot.version !== ONLINE_SESSION_VERSION || revision <= onlineRevision) {
+      setOnlineStatus("saved");
+      return;
+    }
+    const remoteGameTime = gameTimestamp(snapshot.game);
+    const localGameTime = gameTimestamp(game);
+    const remoteClearedAt = Number(snapshot?.clearedAt) || 0;
+    const remoteExplicitlyCleared = !snapshot.game && remoteClearedAt > localGameTime;
+    if (game && ((!snapshot.game && !remoteExplicitlyCleared) || localGameTime > remoteGameTime)) {
+      queueOnlineSync(0);
+      return;
+    }
+    onlineRevision = revision;
+    saveRemoteStateLocally(snapshot);
+    render();
+    setOnlineStatus("saved");
+    showToast("Online-Spielstand wurde aktualisiert.");
+  } catch {
+    setOnlineStatus("offline");
+  }
+}
+
+function startOnlinePolling() {
+  window.clearInterval(onlinePollTimer);
+  onlinePollTimer = window.setInterval(() => refreshOnlineSession(), ONLINE_POLL_INTERVAL);
+}
+
+function stopOnlineSync() {
+  window.clearInterval(onlinePollTimer);
+  window.clearTimeout(onlineWriteTimer);
+  onlinePollTimer = null;
+  onlineWriteTimer = null;
+  onlineReady = false;
+  onlineInitialization = null;
+}
+
+async function initializeOnlineSession() {
+  if (!appUnlocked) return;
+  if (onlineInitialization) return onlineInitialization;
+  onlineInitialization = (async () => {
+    setOnlineStatus("connecting");
+    try {
+      const snapshot = await fetchOnlineSession();
+      const revision = Number(snapshot?.updatedAt) || 0;
+      if (snapshot?.version === ONLINE_SESSION_VERSION) {
+        const remoteGame = migrateGameRoster(snapshot.game);
+        const remoteGameTime = gameTimestamp(remoteGame);
+        const localGameTime = gameTimestamp(game);
+        const remoteWasClearedLater = !remoteGame && (Number(snapshot.clearedAt) || 0) > localGameTime;
+        if ((remoteGame && isGameShapeValid(remoteGame) && remoteGameTime >= localGameTime) || remoteWasClearedLater || (!game && !remoteGame)) {
+          saveRemoteStateLocally(snapshot);
+        } else {
+          archivedGames = mergeGameArchives(archivedGames, Array.isArray(snapshot.archivedGames) ? snapshot.archivedGames : []);
+          localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archivedGames));
+        }
+        onlineRevision = revision;
+      }
+      onlineReady = true;
+      await writeOnlineSession();
+      render();
+      setOnlineStatus("saved");
+    } catch {
+      onlineReady = true;
+      setOnlineStatus("offline");
+    }
+    startOnlinePolling();
+  })().finally(() => {
+    onlineInitialization = null;
+  });
+  return onlineInitialization;
+}
+
 function readSessionUnlock() {
   try {
     if (sessionStorage.getItem(ACCESS_SESSION_KEY) === ACCESS_CODE_DIGEST) return true;
@@ -141,6 +378,7 @@ function loadArchive() {
 
 function persistArchive() {
   localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archivedGames));
+  queueOnlineSync();
 }
 
 function normalizedProfileId(name) {
@@ -229,16 +467,21 @@ function persistSetup() {
     players: setupPlayers,
     startingMixerName: setupStartingMixerName,
   }));
+  queueOnlineSync();
 }
 
 function persistGame() {
   if (!game) return;
+  onlineGameClearedAt = 0;
   game.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
+  queueOnlineSync();
 }
 
 function removeSavedGame() {
   localStorage.removeItem(STORAGE_KEY);
+  onlineGameClearedAt = Date.now();
+  queueOnlineSync();
 }
 
 function currentRound() {
@@ -281,14 +524,17 @@ function closeDialog(dialog) {
 function brandMarkup(withMenu = false) {
   return `
     <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m12 3-4 4h2v4h4V7h2l-4-4Z"></path>
-            <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
-          </svg>
-        </span>
-        <span>Bruno</span>
+      <div class="brand-group">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m12 3-4 4h2v4h4V7h2l-4-4Z"></path>
+              <path d="m12 21 4-4h-2v-4h-4v4H8l4 4Z"></path>
+            </svg>
+          </span>
+          <span>Bruno</span>
+        </div>
+        ${appUnlocked ? `<span class="online-status" data-online-status data-state="${onlineStatus}">${onlineStatusText()}</span>` : ""}
       </div>
       ${withMenu
         ? '<button class="icon-button" type="button" data-action="open-menu" aria-label="Partie-Menü öffnen">•••</button>'
@@ -308,15 +554,15 @@ function renderLock() {
           </svg>
         </span>
         <span class="eyebrow">Geschützte Spielrunde</span>
-        <h1>Gemeinsamen Code eingeben</h1>
-        <p>Danach wird eine laufende Partie auf diesem Gerät automatisch an derselben Stelle fortgesetzt.</p>
+        <h1>Sitzungscode eingeben</h1>
+        <p>Mit dem Code wird die gemeinsame Online-Partie geladen – auch auf einem anderen Handy.</p>
         <form id="access-code-form" class="access-form">
-          <label class="sr-only" for="access-code-input">Gemeinsamer App-Code</label>
-          <input id="access-code-input" class="text-input access-input" name="accessCode" type="password" inputmode="numeric" autocomplete="current-password" placeholder="App-Code" autofocus>
+          <label class="sr-only" for="access-code-input">Sitzungscode</label>
+          <input id="access-code-input" class="text-input access-input" name="accessCode" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Sitzungscode" autofocus>
           ${accessError ? `<div class="warning-box">${escapeHtml(accessError)}</div>` : ""}
           <button class="primary-button full-width" type="submit">App öffnen</button>
         </form>
-        <small>Der Code schützt vor zufälligem Zugriff. Die Daten bleiben ausschließlich in diesem Browser gespeichert.</small>
+        <small>Die Partie wird online und zusätzlich auf diesem Gerät gespeichert.</small>
       </section>
     </main>`;
 }
@@ -1517,6 +1763,7 @@ function lockApp() {
     sessionStorage.removeItem(LEGACY_STORAGE_KEYS.access);
   } catch {}
   appUnlocked = false;
+  stopOnlineSync();
   accessError = "";
   closeDialog(menuDialog);
   render();
@@ -1564,7 +1811,8 @@ document.addEventListener("submit", async (event) => {
         sessionStorage.setItem(ACCESS_SESSION_KEY, ACCESS_CODE_DIGEST);
       } catch {}
       render();
-      showToast(game?.status === "active" ? "Laufende Partie wurde fortgesetzt." : "App wurde geöffnet.");
+      await initializeOnlineSession();
+      showToast(onlineStatus === "saved" ? `Online-Sitzung ${ONLINE_SESSION_CODE} wurde geladen.` : "Bruno läuft vorerst mit dem lokalen Spielstand.");
     } catch {
       accessError = "Der Code konnte in diesem Browser nicht geprüft werden.";
       renderLock();
@@ -1825,6 +2073,14 @@ wizardDialog.addEventListener("cancel", (event) => {
   cancelActiveWizard();
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && appUnlocked) refreshOnlineSession();
+});
+window.addEventListener("online", () => {
+  if (appUnlocked) initializeOnlineSession();
+});
+window.addEventListener("offline", () => setOnlineStatus("offline"));
+
 if ("serviceWorker" in navigator) {
   let refreshingForUpdate = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
@@ -1840,3 +2096,4 @@ if ("serviceWorker" in navigator) {
 }
 
 render();
+if (appUnlocked) initializeOnlineSession();

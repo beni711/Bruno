@@ -3,7 +3,7 @@
     ".read": false,
     ".write": false,
     "sessions": {
-      "111111": {
+      "0160e4b3e0c426ecaea81be0b8bdbd6de0694e75b45a10d97b12a746069204ba": {
         ".read": true,
         ".write": true,
         ".validate": "newData.hasChildren(['version', 'code', 'updatedAt', 'updatedBy', 'clearedAt']) && newData.child('version').val() === 1 && newData.child('code').val() === '111111' && newData.child('updatedAt').isNumber() && newData.child('updatedBy').isString() && newData.child('clearedAt').isNumber()"

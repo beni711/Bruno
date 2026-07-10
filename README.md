@@ -18,7 +18,7 @@ Die App enthält einen gemeinsamen Zugangscode, automatische Wiederaufnahme auf 
 
 ## Spielprotokoll
 
-Unter dem Punktestand öffnet **Details** ein vollständiges Rundenprotokoll. Es zeigt pro Karte und Spieler Punkte, Ansage, gemachte Stiche sowie mögliche Strafen. Über **Drucken / PDF** lässt sich die Übersicht zur Kontrolle oder Dokumentation sichern.
+Unter dem Punktestand öffnet **Details** ein schlichtes Rundenprotokoll wie auf dem Spielzettel: Kartenanzahl links, Spieler-Kürzel oben, Ansage und laufender Punktestand je Spieler. Richtige Ansagen sind grün hinterlegt; Strafen stehen ganz rechts. Über **PDF öffnen** wird die gesamte Partie kompakt auf einer DIN-A4-Seite im Querformat bereitgestellt.
 
 ## Lokal starten
 

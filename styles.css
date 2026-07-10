@@ -1342,18 +1342,18 @@ dialog::backdrop {
 
 .detail-table {
   width: 100%;
-  min-width: 560px;
+  min-width: 620px;
   border-collapse: collapse;
   background: #fff;
 }
 
 .detail-table th,
 .detail-table td {
-  min-width: 116px;
-  padding: 9px 8px;
+  min-width: 44px;
+  padding: 7px 4px;
   border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .detail-table thead th,
@@ -1364,31 +1364,68 @@ dialog::backdrop {
 
 .detail-table thead th {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .detail-table tbody th {
-  min-width: 76px;
+  min-width: 42px;
 }
 
-.detail-table th small,
-.detail-table td small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 600;
-  line-height: 1.35;
+.detail-player-head {
+  min-width: 94px !important;
+  color: var(--ink) !important;
+  font-weight: 850;
 }
 
-.detail-table td strong {
-  font-size: 0.9rem;
+.detail-bid {
+  width: 42px;
+  font-weight: 780;
+}
+
+.detail-score,
+.detail-total {
+  width: 52px;
+  font-weight: 850;
+}
+
+.detail-hit {
+  color: #18553d;
+  background: #d9f1e4;
 }
 
 .detail-empty {
   color: var(--muted);
+}
+
+.detail-penalties {
+  min-width: 112px !important;
+  color: var(--red);
+  text-align: left !important;
+  font-size: 0.66rem;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
+.player-count-6 .detail-table,
+.player-count-7 .detail-table {
+  min-width: 760px;
+}
+
+.player-count-6 .detail-table th,
+.player-count-6 .detail-table td,
+.player-count-7 .detail-table th,
+.player-count-7 .detail-table td,
+.player-count-8 .detail-table th,
+.player-count-8 .detail-table td,
+.player-count-9 .detail-table th,
+.player-count-9 .detail-table td,
+.player-count-10 .detail-table th,
+.player-count-10 .detail-table td {
+  min-width: 40px;
+  padding: 6px 3px;
+  font-size: 0.72rem;
 }
 
 .toast {
@@ -1532,6 +1569,33 @@ dialog::backdrop {
     padding: 12px;
   }
 
+  .setup-panel.many-players {
+    padding: 13px;
+  }
+
+  .setup-panel.many-players .setup-title {
+    margin-bottom: 11px;
+  }
+
+  .setup-panel.many-players .roster-chip {
+    min-height: 38px;
+    padding: 0 9px;
+  }
+
+  .setup-panel.many-players .player-row {
+    min-height: 42px;
+  }
+
+  .setup-panel.many-players .player-number {
+    width: 27px;
+    height: 27px;
+  }
+
+  .setup-panel.many-players .mini-button {
+    width: 32px;
+    height: 32px;
+  }
+
   dialog {
     width: min(calc(100% - 16px), 620px);
     border-radius: 22px;
@@ -1578,68 +1642,6 @@ dialog::backdrop {
   .dialog-footer.three .ghost-button,
   .dialog-footer.three .secondary-button {
     min-height: 44px;
-  }
-}
-
-@media print {
-  @page {
-    margin: 12mm;
-  }
-
-  body.printing-details {
-    background: #fff;
-  }
-
-  body.printing-details #app,
-  body.printing-details #wizard-dialog,
-  body.printing-details #edit-dialog,
-  body.printing-details #menu-dialog,
-  body.printing-details #stats-dialog,
-  body.printing-details #help-dialog,
-  body.printing-details #toast {
-    display: none !important;
-  }
-
-  body.printing-details #details-dialog {
-    position: static;
-    display: block !important;
-    width: 100%;
-    max-width: none;
-    max-height: none;
-    margin: 0;
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  body.printing-details #details-dialog .dialog-shell {
-    max-height: none;
-  }
-
-  body.printing-details #details-dialog .dialog-content {
-    overflow: visible;
-    padding: 0;
-  }
-
-  body.printing-details #details-dialog .dialog-head {
-    padding: 0 0 12px;
-  }
-
-  body.printing-details #details-dialog .dialog-head .icon-button,
-  body.printing-details #details-dialog .detail-actions {
-    display: none;
-  }
-
-  body.printing-details .detail-table {
-    min-width: 0;
-    font-size: 9pt;
-  }
-
-  body.printing-details .detail-table th,
-  body.printing-details .detail-table td {
-    min-width: 0;
-    padding: 6px;
   }
 }
 

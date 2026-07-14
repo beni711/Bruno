@@ -30,7 +30,7 @@ const FIREBASE_DATABASE_URL = "https://bruno-bd32a-default-rtdb.europe-west1.fir
 const ONLINE_SESSION_URL = `${FIREBASE_DATABASE_URL}/sessions/${ONLINE_SESSION_STORAGE_KEY}.json`;
 const ONLINE_SESSION_VERSION = 1;
 const ONLINE_POLL_INTERVAL = 5000;
-const BID_CONFIRMATION_DURATION = 1000;
+const BID_CONFIRMATION_DURATION = 1800;
 const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
 const LEGACY_STORAGE_KEYS = {
   game: "aufzug.game.v1",

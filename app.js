@@ -55,8 +55,6 @@ const PENALTY_LABELS = {
 const BACKUP_VERSION = 2;
 
 const app = document.querySelector("#app");
-const wizardDialog = document.querySelector("#wizard-dialog");
-const wizardContent = document.querySelector("#wizard-content");
 const editDialog = document.querySelector("#edit-dialog");
 const editContent = document.querySelector("#edit-content");
 const menuDialog = document.querySelector("#menu-dialog");
@@ -256,7 +254,7 @@ function queueOnlineSync(delay = 300) {
 }
 
 function onlineDialogsAreOpen() {
-  return wizardDialog.open || editDialog.open || Boolean(bidConfirmationTimer);
+  return editDialog.open || Boolean(bidConfirmationTimer);
 }
 
 async function refreshOnlineSession() {
@@ -744,9 +742,7 @@ function renderRoundPlayers(round) {
 
 function renderPhaseActions(round, copy) {
   if (round.phase === "bidding") return "";
-  if (round.phase === "playing") {
-    return `<button class="primary-button full-width" type="button" data-action="open-tricks">${copy.button}</button>`;
-  }
+  if (round.phase === "playing") return "";
   return `
     <div class="action-row split">
       <button class="primary-button" type="button" data-action="next-round">${copy.button}</button>
@@ -1366,7 +1362,9 @@ function renderGame() {
           </div>
           ${round.phase === "bidding"
             ? renderInlineBidPanel(round)
-            : `
+            : round.phase === "playing"
+              ? renderInlineTrickPanel(round)
+              : `
               <div class="phase-head"><h2>${copy.title}</h2><p>${copy.copy}</p></div>
               <ol class="round-player-list">${renderRoundPlayers(round)}</ol>
               ${renderPhaseActions(round, copy)}`}
@@ -1456,10 +1454,10 @@ function firstMissingStep(values, order) {
 
 function ensureBidWizard(round) {
   const order = biddingOrder(game.currentRoundIndex);
-  const isCurrentRound = bidWizard?.roundIndex === game.currentRoundIndex;
+  const isCurrentRound = bidWizard?.gameId === game.gameId && bidWizard?.roundIndex === game.currentRoundIndex;
   const stepIsValid = Number.isInteger(bidWizard?.step) && bidWizard.step >= 0 && bidWizard.step < order.length;
   if (!isCurrentRound || !stepIsValid) {
-    bidWizard = { roundIndex: game.currentRoundIndex, step: firstMissingStep(round.bids, order) };
+    bidWizard = { gameId: game.gameId, roundIndex: game.currentRoundIndex, step: firstMissingStep(round.bids, order) };
   }
   return order;
 }
@@ -1548,25 +1546,23 @@ function renderInlineBidPanel(round) {
     </section>`;
 }
 
-function openTrickWizard(startAtBeginning = false) {
-  const round = currentRound();
-  if (!round || (round.phase !== "playing" && round.phase !== "result")) return;
+function ensureTrickWizard(round) {
   const order = biddingOrder(game.currentRoundIndex);
-  bidWizard = null;
-  trickWizard = {
-    roundIndex: game.currentRoundIndex,
-    step: startAtBeginning ? 0 : firstMissingStep(round.tricks, order),
-    restoreOnCancel: round.phase === "result",
-    originalTricks: round.phase === "result" ? { ...round.tricks } : null,
-    autoFilledPlayerIds: [],
-  };
-  renderTrickWizard();
-  openDialog(wizardDialog);
+  const isCurrentRound = trickWizard?.gameId === game.gameId && trickWizard?.roundIndex === game.currentRoundIndex;
+  const stepIsValid = Number.isInteger(trickWizard?.step) && trickWizard.step >= 0 && trickWizard.step < order.length;
+  if (!isCurrentRound || !stepIsValid) {
+    trickWizard = {
+      gameId: game.gameId,
+      roundIndex: game.currentRoundIndex,
+      step: firstMissingStep(round.tricks, order),
+      autoFilledPlayerIds: [],
+    };
+  }
+  return order;
 }
 
-function renderTrickWizard() {
-  const round = game.rounds[trickWizard.roundIndex];
-  const order = biddingOrder(trickWizard.roundIndex);
+function renderInlineTrickPanel(round) {
+  const order = ensureTrickWizard(round);
   const playerIndex = order[trickWizard.step];
   const player = game.players[playerIndex];
   const selected = round.tricks[player.id];
@@ -1580,6 +1576,8 @@ function renderTrickWizard() {
   const remaining = round.cards - total;
   const validation = validateTricks(round.tricks, playerIds(), round.cards);
   const predictedPoints = Number.isInteger(selected) ? pointsForRound(round.bids[player.id], selected) : 0;
+  const completedCount = order.filter((index) => Number.isInteger(round.tricks[game.players[index].id])).length;
+  const openCount = order.length - completedCount;
 
   const numberButtons = Array.from(
     { length: round.cards + 1 },
@@ -1589,33 +1587,41 @@ function renderTrickWizard() {
     },
   ).join("");
 
-  wizardContent.innerHTML = `
-    <div class="dialog-shell">
-      <div class="dialog-head">
-        <div><span class="eyebrow">Ergebnis ${trickWizard.step + 1} von ${order.length}</span><h2 id="wizard-title">Runde auswerten</h2></div>
-        <button class="icon-button" type="button" data-action="cancel-wizard" aria-label="Auswertung schließen">×</button>
-      </div>
-      <div class="dialog-content">
-        <div class="wizard-progress">${wizardProgress(order, round.tricks, trickWizard.step)}</div>
-        <p class="wizard-question">Wie viele Stiche wurden tatsächlich gemacht?</p>
-        <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
-        <div class="bid-context"><span>Ansage: ${round.bids[player.id]}</span><span>${Number.isInteger(selected) ? (selected === round.bids[player.id] ? `Treffer · +${predictedPoints}` : `Daneben · ${predictedPoints}`) : "Ergebnis wählen"}</span></div>
-        <div class="number-grid">${numberButtons}</div>
-        <div class="total-panel">
-          <div class="total-stat"><strong>${total}</strong><span>Stiche eingetragen</span></div>
-          <div class="total-stat"><strong>${Math.max(0, remaining)}</strong><span>Stiche noch offen</span></div>
+  return `
+    <section class="inline-bid-panel inline-trick-panel" aria-labelledby="inline-trick-title">
+      <div class="inline-bid-head">
+        <div>
+          <span class="eyebrow">Ergebnis ${trickWizard.step + 1} von ${order.length}</span>
+          <h2 id="inline-trick-title">Runde auswerten</h2>
         </div>
-        ${total === round.cards
-          ? '<div class="success-box">Alle Stiche sind verteilt. Noch offene Spieler wurden automatisch mit 0 Stichen eingetragen.</div>'
-          : `<div class="inline-notice">Noch <strong>${Math.max(0, remaining)}</strong> ${remaining === 1 ? "Stich muss" : "Stiche müssen"} auf die offenen Spieler verteilt werden.</div>`}
-        ${validation.reason === "total" && isLast ? `<div class="warning-box">Insgesamt müssen genau ${round.cards} Stiche eingetragen sein.</div>` : ""}
-        <ul class="previous-values">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
+        <span class="inline-bid-round">${round.cards} ${pluralCards(round.cards)}</span>
       </div>
-      <div class="dialog-footer">
-        <button class="ghost-button" type="button" data-action="cancel-wizard">Abbrechen</button>
+      <div class="wizard-progress">${wizardProgress(order, round.tricks, trickWizard.step)}</div>
+      <p class="inline-bid-explanation">Tragt die tatsächlich gemachten Stiche der Reihe nach ein. Zusammen müssen genau ${round.cards} Stiche verteilt werden.</p>
+      <div class="inline-bid-player-row">
+        <div>
+          <p class="wizard-question">Wie viele Stiche wurden tatsächlich gemacht?</p>
+          <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
+        </div>
+        <span class="inline-current-value">${Number.isInteger(selected) ? selected : "–"}<small>${selected === 1 ? "Stich" : "Stiche"}</small></span>
+      </div>
+      <div class="bid-context"><span>Ansage: ${round.bids[player.id]}</span><span>${Number.isInteger(selected) ? (selected === round.bids[player.id] ? `Treffer · +${predictedPoints}` : `Daneben · ${predictedPoints}`) : "Ergebnis wählen"}</span></div>
+      <div class="number-grid">${numberButtons}</div>
+      <div class="total-panel inline-bid-totals">
+        <div class="total-stat"><strong>${total}</strong><span>Stiche eingetragen</span></div>
+        <div class="total-stat"><strong>${Math.max(0, remaining)}</strong><span>Stiche noch offen</span></div>
+        <div class="total-stat"><strong>${openCount}</strong><span>Spieler offen</span></div>
+      </div>
+      ${total === round.cards
+        ? '<div class="success-box">Alle Stiche sind verteilt. Noch offene Spieler werden automatisch mit 0 Stichen eingetragen.</div>'
+        : `<div class="inline-notice">Noch <strong>${Math.max(0, remaining)}</strong> ${remaining === 1 ? "Stich muss" : "Stiche müssen"} auf die offenen Spieler verteilt werden.</div>`}
+      ${validation.reason === "total" && isLast ? `<div class="warning-box">Insgesamt müssen genau ${round.cards} Stiche eingetragen sein.</div>` : ""}
+      <ul class="previous-values inline-bid-players">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
+      <div class="inline-bid-actions">
         <button class="secondary-button" type="button" data-action="trick-back" ${trickWizard.step === 0 ? "disabled" : ""}>Zurück</button>
+        <small>Zahl antippen – danach geht es direkt weiter.</small>
       </div>
-    </div>`;
+    </section>`;
 }
 
 function advanceRound() {
@@ -1632,17 +1638,6 @@ function advanceRound() {
   if (game.status === "finished") archiveCompletedGame(game);
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function cancelActiveWizard() {
-  if (trickWizard?.restoreOnCancel) {
-    game.rounds[trickWizard.roundIndex].tricks = { ...trickWizard.originalTricks };
-    persistGame();
-  }
-  bidWizard = null;
-  trickWizard = null;
-  closeDialog(wizardDialog);
-  render();
 }
 
 function openRoundEditor(roundIndex) {
@@ -1959,7 +1954,7 @@ document.addEventListener("click", (event) => {
         render();
         return;
       }
-      bidWizard = { roundIndex, step };
+      bidWizard = { gameId: confirmationGameId, roundIndex, step };
       if (step < order.length - 1) {
         bidWizard.step += 1;
         render();
@@ -1977,7 +1972,6 @@ document.addEventListener("click", (event) => {
     const order = biddingOrder(roundIndex);
     const player = game.players[order[step]];
     const value = Number(button.dataset.trickValue);
-    const confirmationGameId = game.gameId;
     const orderedPlayerIds = order.map((playerIndex) => game.players[playerIndex].id);
 
     const autoFilled = new Set(trickWizard.autoFilledPlayerIds ?? []);
@@ -1996,31 +1990,13 @@ document.addEventListener("click", (event) => {
     const resultIsComplete = validateTricks(round.tricks, playerIds(), round.cards).valid;
     if (resultIsComplete) round.phase = "result";
     persistGame();
-    closeDialog(wizardDialog);
-    showBidConfirmation(player.name, value, () => {
-      if (!game || game.gameId !== confirmationGameId || game.currentRoundIndex !== roundIndex) {
-        closeDialog(wizardDialog);
-        trickWizard = null;
-        render();
-        return;
-      }
-      const activeRound = game.rounds[roundIndex];
-      if (activeRound.tricks[player.id] !== value) {
-        renderTrickWizard();
-        openDialog(wizardDialog);
-        return;
-      }
-      if (resultIsComplete && activeRound.phase === "result" && validateTricks(activeRound.tricks, playerIds(), activeRound.cards).valid) {
-        trickWizard = null;
-        closeDialog(wizardDialog);
-        render();
-        showToast("Punkte wurden automatisch berechnet.");
-        return;
-      }
-      trickWizard.step = Math.min(step + 1, order.length - 1);
-      renderTrickWizard();
-      openDialog(wizardDialog);
-    });
+    if (resultIsComplete) {
+      trickWizard = null;
+      render();
+      return;
+    }
+    trickWizard.step = Math.min(step + 1, order.length - 1);
+    render();
     return;
   }
 
@@ -2086,19 +2062,13 @@ document.addEventListener("click", (event) => {
     case "export-backup":
       exportGame();
       break;
-    case "open-tricks":
-      openTrickWizard();
-      break;
-    case "cancel-wizard":
-      cancelActiveWizard();
-      break;
     case "bid-back":
       if (bidWizard.step > 0) bidWizard.step -= 1;
       render();
       break;
     case "trick-back":
       if (trickWizard.step > 0) trickWizard.step -= 1;
-      renderTrickWizard();
+      render();
       break;
     case "edit-current-result":
       openRoundEditor(game.currentRoundIndex);
@@ -2156,11 +2126,6 @@ document.querySelector("#lock-button").addEventListener("click", lockApp);
 importFile.addEventListener("change", () => {
   const [file] = importFile.files;
   if (file) importGameFromFile(file);
-});
-
-wizardDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  cancelActiveWizard();
 });
 
 document.addEventListener("visibilitychange", () => {

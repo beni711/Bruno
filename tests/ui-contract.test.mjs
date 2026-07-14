@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
 test("Ansagen werden dauerhaft in der Rundenseite statt in einem Popup angezeigt", () => {
   assert.match(appSource, /function renderInlineBidPanel\(round\)/);
@@ -36,12 +37,15 @@ test("Ein Zahlentipp bestätigt die Ansage zwei Sekunden und wechselt automatisc
   assert.doesNotMatch(styles, /\.bid-confirmation-label|\.bid-confirmation-card small/);
 });
 
-test("Auch die Auswertung wechselt nach einem Zahlentipp automatisch weiter", () => {
-  assert.equal(appSource.match(/showBidConfirmation\(player\.name, value, \(\) =>/g)?.length, 2);
-  assert.doesNotMatch(appSource, /data-action="trick-next"|case "trick-next"/);
+test("Die Auswertung steht dauerhaft in der Rundenseite und öffnet kein Popup", () => {
+  assert.match(appSource, /function renderInlineTrickPanel\(round\)/);
+  assert.match(appSource, /round\.phase === "playing"\s*\? renderInlineTrickPanel\(round\)/);
+  assert.equal(appSource.match(/showBidConfirmation\(player\.name, value, \(\) =>/g)?.length, 1);
+  assert.doesNotMatch(appSource, /data-action="open-tricks"|data-action="trick-next"|case "trick-next"/);
+  assert.doesNotMatch(appSource, /wizardDialog|wizardContent|openTrickWizard|renderTrickWizard|cancelActiveWizard/);
+  assert.doesNotMatch(html, /id="wizard-dialog"|id="wizard-content"/);
   assert.match(appSource, /if \(resultIsComplete\) round\.phase = "result"/);
   assert.match(appSource, /trickWizard\.step = Math\.min\(step \+ 1, order\.length - 1\)/);
   assert.match(appSource, /isLast && value !== maxAllowed/);
-  assert.match(appSource, /persistGame\(\);\s*closeDialog\(wizardDialog\);\s*showBidConfirmation\(player\.name, value/);
-  assert.match(appSource, /renderTrickWizard\(\);\s*openDialog\(wizardDialog\);/);
+  assert.match(appSource, /trickWizard\.step = Math\.min\(step \+ 1, order\.length - 1\);\s*render\(\)/);
 });

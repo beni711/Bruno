@@ -6,7 +6,7 @@ Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert d
 
 Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetragen. Ein Tipp auf eine Stichzahl speichert die Ansage sofort, zeigt ungefähr zwei Sekunden lang nur den Spielernamen und die gewählte Zahl an und wechselt dann automatisch zur nächsten Person. Kartenanzahl, angesagte Stiche, offene Spieler, Reihenfolge und der für die letzte Person gesperrte Wert bleiben während der Eingabe sichtbar.
 
-Bei der Rundenauswertung gilt derselbe schnelle Ablauf: Tatsächlich gemachte Stiche antippen, zwei Sekunden lang nur Name und Zahl sehen und automatisch zur nächsten Person wechseln. Sobald alle verfügbaren Stiche verteilt sind, werden offene Ergebnisse mit 0 ergänzt und die Punkte direkt berechnet.
+Die Rundenauswertung steht ebenfalls dauerhaft in der Rundenseite und öffnet kein Popup. Ein Tipp auf die tatsächlich gemachten Stiche wechselt sofort zur nächsten Person. Sobald alle verfügbaren Stiche verteilt sind, werden offene Ergebnisse mit 0 ergänzt und die Punkte direkt berechnet.
 
 ## Enthaltene Regeln
 

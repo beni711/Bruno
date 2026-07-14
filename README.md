@@ -4,7 +4,7 @@ Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten
 
 Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert die laufende Partie über Firebase, speichert zusätzlich lokal, enthält die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, erlaubt Gäste und führt eine Langzeitstatistik aller abgeschlossenen Partien. Unter **Menü → Vergangene Spiele** stehen die Partien – neueste zuerst – jeweils mit Datum, Gewinner, Spielerzahl, Rundenzahl und vollständigem Endstand.
 
-Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetragen. Ein zusätzliches Ansage-Popup ist nicht nötig; Kartenanzahl, angesagte Stiche, offene Spieler, Reihenfolge und der für die letzte Person gesperrte Wert bleiben während der Eingabe sichtbar.
+Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetragen. Ein Tipp auf eine Stichzahl speichert die Ansage sofort, zeigt sie ungefähr zwei Sekunden groß an und wechselt dann automatisch zur nächsten Person. Kartenanzahl, angesagte Stiche, offene Spieler, Reihenfolge und der für die letzte Person gesperrte Wert bleiben während der Eingabe sichtbar.
 
 ## Enthaltene Regeln
 

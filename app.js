@@ -30,6 +30,7 @@ const FIREBASE_DATABASE_URL = "https://bruno-bd32a-default-rtdb.europe-west1.fir
 const ONLINE_SESSION_URL = `${FIREBASE_DATABASE_URL}/sessions/${ONLINE_SESSION_STORAGE_KEY}.json`;
 const ONLINE_SESSION_VERSION = 1;
 const ONLINE_POLL_INTERVAL = 5000;
+const BID_CONFIRMATION_DURATION = 2000;
 const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
 const LEGACY_STORAGE_KEYS = {
   game: "aufzug.game.v1",
@@ -66,6 +67,7 @@ const detailsDialog = document.querySelector("#details-dialog");
 const detailsContent = document.querySelector("#details-content");
 const importFile = document.querySelector("#import-file");
 const toast = document.querySelector("#toast");
+const bidConfirmation = document.querySelector("#bid-confirmation");
 
 let game = loadSavedGame();
 let archivedGames = loadArchive();
@@ -76,6 +78,7 @@ let bidWizard = null;
 let trickWizard = null;
 let editDraft = null;
 let toastTimer = null;
+let bidConfirmationTimer = null;
 let accessError = "";
 let appUnlocked = readSessionUnlock();
 const deviceId = readDeviceId();
@@ -253,13 +256,14 @@ function queueOnlineSync(delay = 300) {
 }
 
 function onlineDialogsAreOpen() {
-  return wizardDialog.open || editDialog.open;
+  return wizardDialog.open || editDialog.open || Boolean(bidConfirmationTimer);
 }
 
 async function refreshOnlineSession() {
   if (!appUnlocked || onlineWriteInFlight || onlineDialogsAreOpen()) return;
   try {
     const snapshot = await fetchOnlineSession();
+    if (onlineDialogsAreOpen()) return;
     const revision = Number(snapshot?.updatedAt) || 0;
     if (!snapshot || snapshot.version !== ONLINE_SESSION_VERSION || revision <= onlineRevision) {
       setOnlineStatus("saved");
@@ -300,10 +304,21 @@ function stopOnlineSync() {
 async function initializeOnlineSession() {
   if (!appUnlocked) return;
   if (onlineInitialization) return onlineInitialization;
+  if (onlineDialogsAreOpen()) {
+    window.setTimeout(() => initializeOnlineSession(), BID_CONFIRMATION_DURATION + 200);
+    return;
+  }
   onlineInitialization = (async () => {
     setOnlineStatus("connecting");
     try {
       const snapshot = await fetchOnlineSession();
+      if (onlineDialogsAreOpen()) {
+        onlineReady = true;
+        setOnlineStatus("saved");
+        startOnlinePolling();
+        window.setTimeout(() => refreshOnlineSession(), BID_CONFIRMATION_DURATION + 200);
+        return;
+      }
       const revision = Number(snapshot?.updatedAt) || 0;
       if (snapshot?.version === ONLINE_SESSION_VERSION) {
         const remoteGame = migrateGameRoster(snapshot.game);
@@ -502,6 +517,38 @@ function showToast(message) {
   toast.classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("visible"), 2600);
+}
+
+function clearBidConfirmation() {
+  window.clearTimeout(bidConfirmationTimer);
+  bidConfirmationTimer = null;
+  bidConfirmation.classList.remove("visible");
+  bidConfirmation.hidden = true;
+  bidConfirmation.setAttribute("aria-hidden", "true");
+  bidConfirmation.innerHTML = "";
+}
+
+function showBidConfirmation(playerName, value, isLast, onComplete) {
+  clearBidConfirmation();
+  bidConfirmation.innerHTML = `
+    <div class="bid-confirmation-card">
+      <span class="eyebrow">Ansage gespeichert</span>
+      <strong>${escapeHtml(playerName)}</strong>
+      <span class="bid-confirmation-value">${value}</span>
+      <span class="bid-confirmation-label">${value === 1 ? "Stich" : "Stiche"}</span>
+      <small>${isLast ? "Die Runde kann gleich beginnen" : "Nächster Spieler kommt gleich"}</small>
+    </div>`;
+  bidConfirmation.hidden = false;
+  bidConfirmation.setAttribute("aria-hidden", "false");
+  window.requestAnimationFrame(() => bidConfirmation.classList.add("visible"));
+  bidConfirmationTimer = window.setTimeout(() => {
+    bidConfirmation.classList.remove("visible");
+    bidConfirmation.hidden = true;
+    bidConfirmation.setAttribute("aria-hidden", "true");
+    bidConfirmation.innerHTML = "";
+    bidConfirmationTimer = null;
+    onComplete();
+  }, BID_CONFIRMATION_DURATION);
 }
 
 function openDialog(dialog) {
@@ -1456,7 +1503,6 @@ function renderInlineBidPanel(round) {
   const validation = validateBids(round.bids, playerIds(), round.cards);
   const allComplete = validation.reason !== "missing";
   const invalidTotal = allComplete && validation.reason === "equal";
-  const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
   const completedCount = order.filter((index) => Number.isInteger(round.bids[game.players[index].id])).length;
   const openCount = order.length - completedCount;
   const bidRole = playerIndex === round.dealerIndex
@@ -1499,8 +1545,8 @@ function renderInlineBidPanel(round) {
       ${isLast && Number.isInteger(forbidden) && forbidden >= 0 && forbidden <= round.cards ? `<div class="inline-notice">Für ${escapeHtml(player.name)} ist <strong>${forbidden}</strong> gesperrt, damit die Gesamtsumme nicht genau ${round.cards} ergibt.</div>` : ""}
       <ul class="previous-values inline-bid-players">${previousValuesList(order, round.bids, bidWizard.step, "bids", round)}</ul>
       <div class="inline-bid-actions">
-        <button class="secondary-button" type="button" data-action="bid-back" ${bidWizard.step === 0 ? "disabled" : ""}>Zurück</button>
-        <button class="primary-button" type="button" data-action="bid-next" ${nextDisabled ? "disabled" : ""}>${isLast ? "Ansagen bestätigen" : "Weiter"}</button>
+        <button class="secondary-button" type="button" data-action="bid-back" ${bidWizard.step === 0 ? "disabled" : ""}>Vorherige Ansage</button>
+        <small>Zahl antippen – danach geht es automatisch weiter.</small>
       </div>
     </section>`;
 }
@@ -1760,6 +1806,7 @@ async function importGameFromFile(file) {
 }
 
 function resetToSetup(prefill = true) {
+  clearBidConfirmation();
   if (prefill && game) {
     setupPlayers = game.players.map((player) => player.name);
     setupStartingMixerName = game.players[game.startingDealerIndex ?? 0]?.name ?? setupPlayers[0] ?? null;
@@ -1778,6 +1825,7 @@ function requestNewGame() {
 }
 
 function lockApp() {
+  clearBidConfirmation();
   try {
     sessionStorage.removeItem(ACCESS_SESSION_KEY);
     sessionStorage.removeItem(LEGACY_STORAGE_KEYS.access);
@@ -1884,12 +1932,46 @@ document.addEventListener("click", (event) => {
   }
 
   if (button.dataset.bidValue !== undefined && bidWizard) {
-    const round = game.rounds[bidWizard.roundIndex];
-    const order = biddingOrder(bidWizard.roundIndex);
-    const player = game.players[order[bidWizard.step]];
-    round.bids[player.id] = Number(button.dataset.bidValue);
+    const roundIndex = bidWizard.roundIndex;
+    const step = bidWizard.step;
+    const round = game.rounds[roundIndex];
+    const order = biddingOrder(roundIndex);
+    const player = game.players[order[step]];
+    const value = Number(button.dataset.bidValue);
+    const isLast = step === order.length - 1;
+    const confirmationGameId = game.gameId;
+    round.bids[player.id] = value;
+    const lastBidIsValid = isLast && validateBids(round.bids, playerIds(), round.cards).valid;
+    if (lastBidIsValid) round.phase = "playing";
     persistGame();
-    render();
+    showBidConfirmation(player.name, value, isLast, () => {
+      if (!game || game.gameId !== confirmationGameId || game.currentRoundIndex !== roundIndex) {
+        render();
+        return;
+      }
+      const activeRound = game.rounds[roundIndex];
+      if (activeRound.bids[player.id] !== value) {
+        render();
+        return;
+      }
+      if (lastBidIsValid && activeRound.phase === "playing") {
+        bidWizard = null;
+        render();
+        showToast("Ansagen gespeichert. Die Runde kann beginnen.");
+        return;
+      }
+      if (activeRound.phase !== "bidding") {
+        render();
+        return;
+      }
+      bidWizard = { roundIndex, step };
+      if (step < order.length - 1) {
+        bidWizard.step += 1;
+        render();
+        return;
+      }
+      render();
+    });
     return;
   }
 
@@ -1991,22 +2073,6 @@ document.addEventListener("click", (event) => {
       if (bidWizard.step > 0) bidWizard.step -= 1;
       render();
       break;
-    case "bid-next": {
-      const round = game.rounds[bidWizard.roundIndex];
-      const order = biddingOrder(bidWizard.roundIndex);
-      if (bidWizard.step < order.length - 1) {
-        bidWizard.step += 1;
-        render();
-      } else if (validateBids(round.bids, playerIds(), round.cards).valid) {
-        round.phase = "playing";
-        persistGame();
-        bidWizard = null;
-        closeDialog(wizardDialog);
-        render();
-        showToast("Ansagen gespeichert. Die Runde kann beginnen.");
-      }
-      break;
-    }
     case "trick-back":
       if (trickWizard.step > 0) trickWizard.step -= 1;
       renderTrickWizard();

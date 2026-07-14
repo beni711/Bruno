@@ -19,3 +19,17 @@ test("Dauerhafte Ansage zeigt Stichsumme, offene Spieler und den gesperrten Wert
   assert.match(appSource, /Spieler offen/);
   assert.match(appSource, /ist <strong>\$\{forbidden\}<\/strong> gesperrt/);
 });
+
+test("Ein Zahlentipp bestätigt die Ansage zwei Sekunden und wechselt automatisch weiter", () => {
+  assert.match(appSource, /const BID_CONFIRMATION_DURATION = 2000/);
+  assert.match(appSource, /function showBidConfirmation\(/);
+  assert.match(appSource, /showBidConfirmation\(player\.name, value, isLast/);
+  assert.match(appSource, /bidWizard\.step \+= 1/);
+  assert.doesNotMatch(appSource, /data-action="bid-next"/);
+  assert.match(styles, /\.bid-confirmation-card\s*\{/);
+  assert.match(appSource, /const confirmationGameId = game\.gameId/);
+  assert.match(appSource, /if \(lastBidIsValid\) round\.phase = "playing"/);
+  assert.match(appSource, /game\.gameId !== confirmationGameId/);
+  assert.match(appSource, /if \(onlineDialogsAreOpen\(\)\) return;/);
+  assert.match(appSource, /window\.setTimeout\(\(\) => refreshOnlineSession\(\), BID_CONFIRMATION_DURATION \+ 200\)/);
+});

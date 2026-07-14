@@ -688,7 +688,7 @@ h3 {
 .bid-confirmation-card {
   display: grid;
   width: min(100%, 250px);
-  min-height: 285px;
+  min-height: 210px;
   place-items: center;
   align-content: center;
   padding: 24px;
@@ -706,29 +706,15 @@ h3 {
 }
 
 .bid-confirmation-card > strong {
-  margin-top: 8px;
-  font-size: 1.35rem;
+  font-size: 1.45rem;
 }
 
 .bid-confirmation-value {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--green);
   font-size: 6rem;
   font-weight: 950;
   line-height: 0.9;
-}
-
-.bid-confirmation-label {
-  margin-top: 7px;
-  color: var(--green);
-  font-size: 1rem;
-  font-weight: 850;
-}
-
-.bid-confirmation-card small {
-  margin-top: 18px;
-  color: var(--muted);
-  font-size: 0.75rem;
 }
 
 .round-player-list {

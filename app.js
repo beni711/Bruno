@@ -528,15 +528,12 @@ function clearBidConfirmation() {
   bidConfirmation.innerHTML = "";
 }
 
-function showBidConfirmation(playerName, value, isLast, onComplete) {
+function showBidConfirmation(playerName, value, onComplete) {
   clearBidConfirmation();
   bidConfirmation.innerHTML = `
     <div class="bid-confirmation-card">
-      <span class="eyebrow">Ansage gespeichert</span>
       <strong>${escapeHtml(playerName)}</strong>
       <span class="bid-confirmation-value">${value}</span>
-      <span class="bid-confirmation-label">${value === 1 ? "Stich" : "Stiche"}</span>
-      <small>${isLast ? "Die Runde kann gleich beginnen" : "Nächster Spieler kommt gleich"}</small>
     </div>`;
   bidConfirmation.hidden = false;
   bidConfirmation.setAttribute("aria-hidden", "false");
@@ -1583,12 +1580,11 @@ function renderTrickWizard() {
   const remaining = round.cards - total;
   const validation = validateTricks(round.tricks, playerIds(), round.cards);
   const predictedPoints = Number.isInteger(selected) ? pointsForRound(round.bids[player.id], selected) : 0;
-  const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
 
   const numberButtons = Array.from(
     { length: round.cards + 1 },
     (_, value) => {
-      const disabled = value > maxAllowed;
+      const disabled = value > maxAllowed || (isLast && value !== maxAllowed);
       return `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-trick-value="${value}" ${disabled ? "disabled" : ""} aria-label="${value} Stiche${disabled ? ", nicht mehr verfügbar" : ""}">${value}</button>`;
     },
   ).join("");
@@ -1615,10 +1611,9 @@ function renderTrickWizard() {
         ${validation.reason === "total" && isLast ? `<div class="warning-box">Insgesamt müssen genau ${round.cards} Stiche eingetragen sein.</div>` : ""}
         <ul class="previous-values">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
       </div>
-      <div class="dialog-footer three">
+      <div class="dialog-footer">
         <button class="ghost-button" type="button" data-action="cancel-wizard">Abbrechen</button>
         <button class="secondary-button" type="button" data-action="trick-back" ${trickWizard.step === 0 ? "disabled" : ""}>Zurück</button>
-        <button class="primary-button" type="button" data-action="trick-next" ${nextDisabled ? "disabled" : ""}>${isLast ? "Ergebnis speichern" : "Weiter"}</button>
       </div>
     </div>`;
 }
@@ -1944,7 +1939,7 @@ document.addEventListener("click", (event) => {
     const lastBidIsValid = isLast && validateBids(round.bids, playerIds(), round.cards).valid;
     if (lastBidIsValid) round.phase = "playing";
     persistGame();
-    showBidConfirmation(player.name, value, isLast, () => {
+    showBidConfirmation(player.name, value, () => {
       if (!game || game.gameId !== confirmationGameId || game.currentRoundIndex !== roundIndex) {
         render();
         return;
@@ -1976,28 +1971,56 @@ document.addEventListener("click", (event) => {
   }
 
   if (button.dataset.trickValue !== undefined && trickWizard) {
-    const round = game.rounds[trickWizard.roundIndex];
-    const order = biddingOrder(trickWizard.roundIndex);
-    const player = game.players[order[trickWizard.step]];
+    const roundIndex = trickWizard.roundIndex;
+    const step = trickWizard.step;
+    const round = game.rounds[roundIndex];
+    const order = biddingOrder(roundIndex);
+    const player = game.players[order[step]];
+    const value = Number(button.dataset.trickValue);
+    const confirmationGameId = game.gameId;
     const orderedPlayerIds = order.map((playerIndex) => game.players[playerIndex].id);
 
     const autoFilled = new Set(trickWizard.autoFilledPlayerIds ?? []);
-    for (const playerId of orderedPlayerIds.slice(trickWizard.step + 1)) {
+    for (const playerId of orderedPlayerIds.slice(step + 1)) {
       if (!autoFilled.has(playerId)) continue;
       delete round.tricks[playerId];
       autoFilled.delete(playerId);
     }
     autoFilled.delete(player.id);
-    round.tricks[player.id] = Number(button.dataset.trickValue);
+    round.tricks[player.id] = value;
 
-    const completed = autoFillRemainingTricks(round.tricks, orderedPlayerIds, trickWizard.step, round.cards);
+    const completed = autoFillRemainingTricks(round.tricks, orderedPlayerIds, step, round.cards);
     round.tricks = completed.tricks;
     for (const playerId of completed.filledPlayerIds) autoFilled.add(playerId);
     trickWizard.autoFilledPlayerIds = [...autoFilled];
-    if (completed.filledPlayerIds.length) trickWizard.step = order.length - 1;
-
+    const resultIsComplete = validateTricks(round.tricks, playerIds(), round.cards).valid;
+    if (resultIsComplete) round.phase = "result";
     persistGame();
-    renderTrickWizard();
+    closeDialog(wizardDialog);
+    showBidConfirmation(player.name, value, () => {
+      if (!game || game.gameId !== confirmationGameId || game.currentRoundIndex !== roundIndex) {
+        closeDialog(wizardDialog);
+        trickWizard = null;
+        render();
+        return;
+      }
+      const activeRound = game.rounds[roundIndex];
+      if (activeRound.tricks[player.id] !== value) {
+        renderTrickWizard();
+        openDialog(wizardDialog);
+        return;
+      }
+      if (resultIsComplete && activeRound.phase === "result" && validateTricks(activeRound.tricks, playerIds(), activeRound.cards).valid) {
+        trickWizard = null;
+        closeDialog(wizardDialog);
+        render();
+        showToast("Punkte wurden automatisch berechnet.");
+        return;
+      }
+      trickWizard.step = Math.min(step + 1, order.length - 1);
+      renderTrickWizard();
+      openDialog(wizardDialog);
+    });
     return;
   }
 
@@ -2077,22 +2100,6 @@ document.addEventListener("click", (event) => {
       if (trickWizard.step > 0) trickWizard.step -= 1;
       renderTrickWizard();
       break;
-    case "trick-next": {
-      const round = game.rounds[trickWizard.roundIndex];
-      const order = biddingOrder(trickWizard.roundIndex);
-      if (trickWizard.step < order.length - 1) {
-        trickWizard.step += 1;
-        renderTrickWizard();
-      } else if (validateTricks(round.tricks, playerIds(), round.cards).valid) {
-        round.phase = "result";
-        persistGame();
-        trickWizard = null;
-        closeDialog(wizardDialog);
-        render();
-        showToast("Punkte wurden automatisch berechnet.");
-      }
-      break;
-    }
     case "edit-current-result":
       openRoundEditor(game.currentRoundIndex);
       break;

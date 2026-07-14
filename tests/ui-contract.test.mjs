@@ -23,7 +23,7 @@ test("Dauerhafte Ansage zeigt Stichsumme, offene Spieler und den gesperrten Wert
 test("Ein Zahlentipp bestätigt die Ansage zwei Sekunden und wechselt automatisch weiter", () => {
   assert.match(appSource, /const BID_CONFIRMATION_DURATION = 2000/);
   assert.match(appSource, /function showBidConfirmation\(/);
-  assert.match(appSource, /showBidConfirmation\(player\.name, value, isLast/);
+  assert.match(appSource, /showBidConfirmation\(player\.name, value, \(\) =>/);
   assert.match(appSource, /bidWizard\.step \+= 1/);
   assert.doesNotMatch(appSource, /data-action="bid-next"/);
   assert.match(styles, /\.bid-confirmation-card\s*\{/);
@@ -32,4 +32,16 @@ test("Ein Zahlentipp bestätigt die Ansage zwei Sekunden und wechselt automatisc
   assert.match(appSource, /game\.gameId !== confirmationGameId/);
   assert.match(appSource, /if \(onlineDialogsAreOpen\(\)\) return;/);
   assert.match(appSource, /window\.setTimeout\(\(\) => refreshOnlineSession\(\), BID_CONFIRMATION_DURATION \+ 200\)/);
+  assert.doesNotMatch(appSource, /Ansage gespeichert|Nächster Spieler kommt gleich|Die Runde kann gleich beginnen/);
+  assert.doesNotMatch(styles, /\.bid-confirmation-label|\.bid-confirmation-card small/);
+});
+
+test("Auch die Auswertung wechselt nach einem Zahlentipp automatisch weiter", () => {
+  assert.equal(appSource.match(/showBidConfirmation\(player\.name, value, \(\) =>/g)?.length, 2);
+  assert.doesNotMatch(appSource, /data-action="trick-next"|case "trick-next"/);
+  assert.match(appSource, /if \(resultIsComplete\) round\.phase = "result"/);
+  assert.match(appSource, /trickWizard\.step = Math\.min\(step \+ 1, order\.length - 1\)/);
+  assert.match(appSource, /isLast && value !== maxAllowed/);
+  assert.match(appSource, /persistGame\(\);\s*closeDialog\(wizardDialog\);\s*showBidConfirmation\(player\.name, value/);
+  assert.match(appSource, /renderTrickWizard\(\);\s*openDialog\(wizardDialog\);/);
 });

@@ -1,4 +1,4 @@
-const CACHE_NAME = "bruno-v23";
+const CACHE_NAME = "bruno-v24";
 const APP_FILES = [
   "./",
   "./index.html",

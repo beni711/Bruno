@@ -699,9 +699,7 @@ function renderRoundPlayers(round) {
 }
 
 function renderPhaseActions(round, copy) {
-  if (round.phase === "bidding") {
-    return `<button class="primary-button full-width" type="button" data-action="open-bids">${copy.button}</button>`;
-  }
+  if (round.phase === "bidding") return "";
   if (round.phase === "playing") {
     return `<button class="primary-button full-width" type="button" data-action="open-tricks">${copy.button}</button>`;
   }
@@ -1322,9 +1320,12 @@ function renderGame() {
             <div class="instruction-chip">${trumpText}<span>${round.cards === 1 ? "nicht aufdecken" : "Farbe gilt als Trumpf"}</span></div>
             <div class="instruction-chip">Mischt: ${escapeHtml(dealer.name)}<span>${escapeHtml(firstBidder.name)} beginnt die Ansage</span></div>
           </div>
-          <div class="phase-head"><h2>${copy.title}</h2><p>${copy.copy}</p></div>
-          <ol class="round-player-list">${renderRoundPlayers(round)}</ol>
-          ${renderPhaseActions(round, copy)}
+          ${round.phase === "bidding"
+            ? renderInlineBidPanel(round)
+            : `
+              <div class="phase-head"><h2>${copy.title}</h2><p>${copy.copy}</p></div>
+              <ol class="round-player-list">${renderRoundPlayers(round)}</ol>
+              ${renderPhaseActions(round, copy)}`}
         </div>
       </section>
 
@@ -1409,14 +1410,14 @@ function firstMissingStep(values, order) {
   return missing === -1 ? order.length - 1 : missing;
 }
 
-function openBidWizard() {
-  const round = currentRound();
-  if (!round || round.phase !== "bidding") return;
+function ensureBidWizard(round) {
   const order = biddingOrder(game.currentRoundIndex);
-  trickWizard = null;
-  bidWizard = { roundIndex: game.currentRoundIndex, step: firstMissingStep(round.bids, order) };
-  renderBidWizard();
-  openDialog(wizardDialog);
+  const isCurrentRound = bidWizard?.roundIndex === game.currentRoundIndex;
+  const stepIsValid = Number.isInteger(bidWizard?.step) && bidWizard.step >= 0 && bidWizard.step < order.length;
+  if (!isCurrentRound || !stepIsValid) {
+    bidWizard = { roundIndex: game.currentRoundIndex, step: firstMissingStep(round.bids, order) };
+  }
+  return order;
 }
 
 function wizardProgress(order, values, step) {
@@ -1443,9 +1444,8 @@ function previousValuesList(order, values, step, type, round) {
   }).join("");
 }
 
-function renderBidWizard() {
-  const round = game.rounds[bidWizard.roundIndex];
-  const order = biddingOrder(bidWizard.roundIndex);
+function renderInlineBidPanel(round) {
+  const order = ensureBidWizard(round);
   const playerIndex = order[bidWizard.step];
   const player = game.players[playerIndex];
   const selected = round.bids[player.id];
@@ -1457,6 +1457,8 @@ function renderBidWizard() {
   const allComplete = validation.reason !== "missing";
   const invalidTotal = allComplete && validation.reason === "equal";
   const nextDisabled = !Number.isInteger(selected) || (isLast && !validation.valid);
+  const completedCount = order.filter((index) => Number.isInteger(round.bids[game.players[index].id])).length;
+  const openCount = order.length - completedCount;
   const bidRole = playerIndex === round.dealerIndex
     ? "Mischt · letzte Ansage"
     : bidWizard.step === 0
@@ -1468,32 +1470,39 @@ function renderBidWizard() {
     return `<button class="number-button ${selected === value ? "selected" : ""}" type="button" data-bid-value="${value}" ${isForbidden ? "disabled" : ""} aria-label="${value} Stiche${isForbidden ? ", nicht erlaubt" : ""}">${value}</button>`;
   }).join("");
 
-  wizardContent.innerHTML = `
-    <div class="dialog-shell">
-      <div class="dialog-head">
-        <div><span class="eyebrow">Ansage ${bidWizard.step + 1} von ${order.length}</span><h2 id="wizard-title">Stiche ansagen</h2></div>
-        <button class="icon-button" type="button" data-action="cancel-wizard" aria-label="Ansagen schließen">×</button>
-      </div>
-      <div class="dialog-content">
-        <div class="wizard-progress">${wizardProgress(order, round.bids, bidWizard.step)}</div>
-        <p class="wizard-question">Wie viele Stiche sagst du an?</p>
-        <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
-        <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} auf der Hand</span><span>${escapeHtml(bidRole)}</span></div>
-        <div class="number-grid">${numberButtons}</div>
-        <div class="total-panel">
-          <div class="total-stat"><strong>${total}</strong><span>Ansagen gesamt</span></div>
-          <div class="total-stat"><strong>${round.cards}</strong><span>mögliche Stiche</span></div>
+  return `
+    <section class="inline-bid-panel" aria-labelledby="inline-bid-title">
+      <div class="inline-bid-head">
+        <div>
+          <span class="eyebrow">Ansage ${bidWizard.step + 1} von ${order.length}</span>
+          <h2 id="inline-bid-title">Stiche ansagen</h2>
         </div>
-        ${invalidTotal ? '<div class="warning-box">Genau diese Gesamtsumme ist nicht erlaubt. Die letzte Ansage muss höher oder niedriger sein.</div>' : ""}
-        ${isLast && Number.isInteger(forbidden) && forbidden >= 0 && forbidden <= round.cards ? `<div class="inline-notice">Für die letzte Ansage ist <strong>${forbidden}</strong> gesperrt, damit die Gesamtsumme nicht genau ${round.cards} ergibt.</div>` : ""}
-        <ul class="previous-values">${previousValuesList(order, round.bids, bidWizard.step, "bids", round)}</ul>
+        <span class="inline-bid-round">${round.cards} ${pluralCards(round.cards)}</span>
       </div>
-      <div class="dialog-footer three">
-        <button class="ghost-button" type="button" data-action="cancel-wizard">Abbrechen</button>
+      <div class="wizard-progress">${wizardProgress(order, round.bids, bidWizard.step)}</div>
+      <p class="inline-bid-explanation">Tragt die erwarteten Stiche der Reihe nach ein. Die Summe aller Ansagen darf nicht genau ${round.cards} ergeben.</p>
+      <div class="inline-bid-player-row">
+        <div>
+          <p class="wizard-question">Wie viele Stiche sagt diese Person an?</p>
+          <h3 class="wizard-player">${escapeHtml(player.name)}</h3>
+        </div>
+        <span class="inline-current-value">${Number.isInteger(selected) ? selected : "–"}<small>${selected === 1 ? "Stich" : "Stiche"}</small></span>
+      </div>
+      <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} auf der Hand</span><span>${escapeHtml(bidRole)}</span></div>
+      <div class="number-grid">${numberButtons}</div>
+      <div class="total-panel inline-bid-totals">
+        <div class="total-stat"><strong>${total}</strong><span>Stiche angesagt</span></div>
+        <div class="total-stat"><strong>${round.cards}</strong><span>Stiche möglich</span></div>
+        <div class="total-stat"><strong>${openCount}</strong><span>Spieler offen</span></div>
+      </div>
+      ${invalidTotal ? '<div class="warning-box">Genau diese Gesamtsumme ist nicht erlaubt. Die letzte Ansage muss höher oder niedriger sein.</div>' : ""}
+      ${isLast && Number.isInteger(forbidden) && forbidden >= 0 && forbidden <= round.cards ? `<div class="inline-notice">Für ${escapeHtml(player.name)} ist <strong>${forbidden}</strong> gesperrt, damit die Gesamtsumme nicht genau ${round.cards} ergibt.</div>` : ""}
+      <ul class="previous-values inline-bid-players">${previousValuesList(order, round.bids, bidWizard.step, "bids", round)}</ul>
+      <div class="inline-bid-actions">
         <button class="secondary-button" type="button" data-action="bid-back" ${bidWizard.step === 0 ? "disabled" : ""}>Zurück</button>
         <button class="primary-button" type="button" data-action="bid-next" ${nextDisabled ? "disabled" : ""}>${isLast ? "Ansagen bestätigen" : "Weiter"}</button>
       </div>
-    </div>`;
+    </section>`;
 }
 
 function openTrickWizard(startAtBeginning = false) {
@@ -1880,7 +1889,7 @@ document.addEventListener("click", (event) => {
     const player = game.players[order[bidWizard.step]];
     round.bids[player.id] = Number(button.dataset.bidValue);
     persistGame();
-    renderBidWizard();
+    render();
     return;
   }
 
@@ -1972,9 +1981,6 @@ document.addEventListener("click", (event) => {
     case "export-backup":
       exportGame();
       break;
-    case "open-bids":
-      openBidWizard();
-      break;
     case "open-tricks":
       openTrickWizard();
       break;
@@ -1983,14 +1989,14 @@ document.addEventListener("click", (event) => {
       break;
     case "bid-back":
       if (bidWizard.step > 0) bidWizard.step -= 1;
-      renderBidWizard();
+      render();
       break;
     case "bid-next": {
       const round = game.rounds[bidWizard.roundIndex];
       const order = biddingOrder(bidWizard.roundIndex);
       if (bidWizard.step < order.length - 1) {
         bidWizard.step += 1;
-        renderBidWizard();
+        render();
       } else if (validateBids(round.bids, playerIds(), round.cards).valid) {
         round.phase = "playing";
         persistGame();

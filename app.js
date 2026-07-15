@@ -735,7 +735,7 @@ function renderRoundPlayers(round) {
           <strong>${escapeHtml(player.name)}</strong>
           <small>${isDealer ? "Mischt · sagt zuletzt" : startsBidding ? "Beginnt mit dem Ansagen" : "Ansagereihenfolge"}</small>
         </span>
-        <span class="value-badge ${Number.isInteger(bid) ? "" : "empty"}">Ansage ${Number.isInteger(bid) ? bid : "–"}</span>
+          <span class="value-badge bid-value-square ${Number.isInteger(bid) ? "" : "empty"}" aria-label="Ansage ${Number.isInteger(bid) ? bid : "offen"}" title="Ansage ${Number.isInteger(bid) ? bid : "offen"}">${Number.isInteger(bid) ? bid : "–"}</span>
       </li>`;
   }).join("");
 }
@@ -1481,17 +1481,20 @@ function previousValuesList(order, values, step, type, round) {
   return order.map((playerIndex, index) => {
     const player = game.players[playerIndex];
     const value = values[player.id];
+    const bid = round.bids[player.id];
+    const displayedBid = Number.isInteger(bid) ? bid : "–";
     const wasAutoFilled = type === "tricks" && trickWizard?.autoFilledPlayerIds?.includes(player.id);
     const detail = type === "tricks" && Number.isInteger(value)
       ? `${value === round.bids[player.id] ? "richtig" : "daneben"}${wasAutoFilled ? " · automatisch 0" : ""}`
       : index === 0 ? "beginnt die Ansage" : index === order.length - 1 ? "mischt · sagt zuletzt an" : "";
+    const bidSquare = `<span class="bid-value-square ${Number.isInteger(bid) ? "" : "empty"}" aria-label="Ansage ${Number.isInteger(bid) ? bid : "offen"}" title="Ansage ${Number.isInteger(bid) ? bid : "offen"}">${displayedBid}</span>`;
     const displayedValue = type === "tricks"
-      ? `Ansage ${round.bids[player.id]} · gemacht ${Number.isInteger(value) ? value : "–"}`
-      : `Ansage ${Number.isInteger(value) ? value : "–"}`;
+      ? `${bidSquare}<span class="made-value">gemacht ${Number.isInteger(value) ? value : "–"}</span>`
+      : bidSquare;
     return `
       <li class="${index === step ? "current" : ""}">
         <span>${escapeHtml(player.name)}${detail ? `<small> · ${detail}</small>` : ""}</span>
-        <strong>${displayedValue}</strong>
+        <span class="player-value-cells">${displayedValue}</span>
       </li>`;
   }).join("");
 }

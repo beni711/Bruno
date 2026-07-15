@@ -2082,7 +2082,18 @@ document.addEventListener("click", (event) => {
       const round = currentRound();
       if (round?.phase !== "playing") break;
       trickWizard = null;
-      ensureTrickWizard(round);
+      const order = ensureTrickWizard(round);
+      const orderedPlayerIds = order.map((playerIndex) => game.players[playerIndex].id);
+      const completed = autoFillRemainingTricks(round.tricks, orderedPlayerIds, trickWizard.step - 1, round.cards);
+      round.tricks = completed.tricks;
+      if (validateTricks(round.tricks, playerIds(), round.cards).valid) {
+        round.phase = "result";
+        trickWizard = null;
+        persistGame();
+      } else if (completed.filledPlayerIds.length) {
+        trickWizard.autoFilledPlayerIds = completed.filledPlayerIds;
+        persistGame();
+      }
       render();
       break;
     }

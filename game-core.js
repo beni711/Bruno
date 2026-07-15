@@ -92,13 +92,23 @@ export function validateTricks(tricks, playerIds, cards) {
 export function autoFillRemainingTricks(tricks, orderedPlayerIds, currentIndex, cards) {
   const values = { ...tricks };
   const filledPlayerIds = [];
-  if (sumValues(values, orderedPlayerIds) !== cards) {
+  const remainingPlayerIds = orderedPlayerIds
+    .slice(currentIndex + 1)
+    .filter((playerId) => !Number.isInteger(values[playerId]));
+  const total = sumValues(values, orderedPlayerIds);
+
+  if (total > cards || remainingPlayerIds.length === 0) {
     return { tricks: values, filledPlayerIds };
   }
 
-  for (const playerId of orderedPlayerIds.slice(currentIndex + 1)) {
-    if (Number.isInteger(values[playerId])) continue;
-    values[playerId] = 0;
+  if (total === cards) {
+    for (const playerId of remainingPlayerIds) {
+      values[playerId] = 0;
+      filledPlayerIds.push(playerId);
+    }
+  } else if (remainingPlayerIds.length === 1) {
+    const [playerId] = remainingPlayerIds;
+    values[playerId] = cards - total;
     filledPlayerIds.push(playerId);
   }
 

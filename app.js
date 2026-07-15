@@ -735,14 +735,21 @@ function renderRoundPlayers(round) {
           <strong>${escapeHtml(player.name)}</strong>
           <small>${isDealer ? "Mischt · sagt zuletzt" : startsBidding ? "Beginnt mit dem Ansagen" : "Ansagereihenfolge"}</small>
         </span>
-        <span class="value-badge ${Number.isInteger(bid) ? "" : "empty"}">${Number.isInteger(bid) ? bid : "–"}</span>
+        <span class="value-badge ${Number.isInteger(bid) ? "" : "empty"}">Ansage ${Number.isInteger(bid) ? bid : "–"}</span>
       </li>`;
   }).join("");
 }
 
 function renderPhaseActions(round, copy) {
   if (round.phase === "bidding") return "";
-  if (round.phase === "playing") return "";
+  if (round.phase === "playing") {
+    const hasTricks = playerIds().some((playerId) => Number.isInteger(round.tricks[playerId]));
+    return `
+      <div class="action-row split" style="grid-template-columns:minmax(0, 1fr) minmax(0, 1fr)">
+        <button class="secondary-button" type="button" data-action="back-to-bids" ${hasTricks ? "disabled" : ""}>Zurück</button>
+        <button class="primary-button" type="button" data-action="start-tricks">${hasTricks ? "Auswertung fortsetzen" : "Stiche auswerten"}</button>
+      </div>`;
+  }
   return `
     <div class="action-row split">
       <button class="primary-button" type="button" data-action="next-round">${copy.button}</button>
@@ -1362,7 +1369,7 @@ function renderGame() {
           </div>
           ${round.phase === "bidding"
             ? renderInlineBidPanel(round)
-            : round.phase === "playing"
+            : round.phase === "playing" && trickWizard?.gameId === game.gameId && trickWizard?.roundIndex === game.currentRoundIndex
               ? renderInlineTrickPanel(round)
               : `
               <div class="phase-head"><h2>${copy.title}</h2><p>${copy.copy}</p></div>
@@ -1476,12 +1483,15 @@ function previousValuesList(order, values, step, type, round) {
     const value = values[player.id];
     const wasAutoFilled = type === "tricks" && trickWizard?.autoFilledPlayerIds?.includes(player.id);
     const detail = type === "tricks" && Number.isInteger(value)
-      ? `Ansage ${round.bids[player.id]} · ${value === round.bids[player.id] ? "richtig" : "daneben"}${wasAutoFilled ? " · automatisch 0" : ""}`
+      ? `${value === round.bids[player.id] ? "richtig" : "daneben"}${wasAutoFilled ? " · automatisch 0" : ""}`
       : index === 0 ? "beginnt die Ansage" : index === order.length - 1 ? "mischt · sagt zuletzt an" : "";
+    const displayedValue = type === "tricks"
+      ? `Ansage ${round.bids[player.id]} · gemacht ${Number.isInteger(value) ? value : "–"}`
+      : `Ansage ${Number.isInteger(value) ? value : "–"}`;
     return `
       <li class="${index === step ? "current" : ""}">
         <span>${escapeHtml(player.name)}${detail ? `<small> · ${detail}</small>` : ""}</span>
-        <strong>${Number.isInteger(value) ? value : "–"}</strong>
+        <strong>${displayedValue}</strong>
       </li>`;
   }).join("");
 }
@@ -1494,12 +1504,9 @@ function renderInlineBidPanel(round) {
   const isLast = bidWizard.step === order.length - 1;
   const othersTotal = playerIds().filter((id) => id !== player.id).reduce((sum, id) => sum + (Number.isInteger(round.bids[id]) ? round.bids[id] : 0), 0);
   const forbidden = isLast ? round.cards - othersTotal : null;
-  const total = sumValues(round.bids, playerIds());
   const validation = validateBids(round.bids, playerIds(), round.cards);
   const allComplete = validation.reason !== "missing";
   const invalidTotal = allComplete && validation.reason === "equal";
-  const completedCount = order.filter((index) => Number.isInteger(round.bids[game.players[index].id])).length;
-  const openCount = order.length - completedCount;
   const bidRole = playerIndex === round.dealerIndex
     ? "Mischt · letzte Ansage"
     : bidWizard.step === 0
@@ -1531,11 +1538,6 @@ function renderInlineBidPanel(round) {
       </div>
       <div class="bid-context"><span>${round.cards} ${pluralCards(round.cards)} auf der Hand</span><span>${escapeHtml(bidRole)}</span></div>
       <div class="number-grid">${numberButtons}</div>
-      <div class="total-panel inline-bid-totals">
-        <div class="total-stat"><strong>${total}</strong><span>Stiche angesagt</span></div>
-        <div class="total-stat"><strong>${round.cards}</strong><span>Stiche möglich</span></div>
-        <div class="total-stat"><strong>${openCount}</strong><span>Spieler offen</span></div>
-      </div>
       ${invalidTotal ? '<div class="warning-box">Genau diese Gesamtsumme ist nicht erlaubt. Die letzte Ansage muss höher oder niedriger sein.</div>' : ""}
       ${isLast && Number.isInteger(forbidden) && forbidden >= 0 && forbidden <= round.cards ? `<div class="inline-notice">Für ${escapeHtml(player.name)} ist <strong>${forbidden}</strong> gesperrt, damit die Gesamtsumme nicht genau ${round.cards} ergibt.</div>` : ""}
       <ul class="previous-values inline-bid-players">${previousValuesList(order, round.bids, bidWizard.step, "bids", round)}</ul>
@@ -1576,8 +1578,6 @@ function renderInlineTrickPanel(round) {
   const remaining = round.cards - total;
   const validation = validateTricks(round.tricks, playerIds(), round.cards);
   const predictedPoints = Number.isInteger(selected) ? pointsForRound(round.bids[player.id], selected) : 0;
-  const completedCount = order.filter((index) => Number.isInteger(round.tricks[game.players[index].id])).length;
-  const openCount = order.length - completedCount;
 
   const numberButtons = Array.from(
     { length: round.cards + 1 },
@@ -1607,18 +1607,13 @@ function renderInlineTrickPanel(round) {
       </div>
       <div class="bid-context"><span>Ansage: ${round.bids[player.id]}</span><span>${Number.isInteger(selected) ? (selected === round.bids[player.id] ? `Treffer · +${predictedPoints}` : `Daneben · ${predictedPoints}`) : "Ergebnis wählen"}</span></div>
       <div class="number-grid">${numberButtons}</div>
-      <div class="total-panel inline-bid-totals">
-        <div class="total-stat"><strong>${total}</strong><span>Stiche eingetragen</span></div>
-        <div class="total-stat"><strong>${Math.max(0, remaining)}</strong><span>Stiche noch offen</span></div>
-        <div class="total-stat"><strong>${openCount}</strong><span>Spieler offen</span></div>
-      </div>
       ${total === round.cards
         ? '<div class="success-box">Alle Stiche sind verteilt. Noch offene Spieler werden automatisch mit 0 Stichen eingetragen.</div>'
         : `<div class="inline-notice">Noch <strong>${Math.max(0, remaining)}</strong> ${remaining === 1 ? "Stich muss" : "Stiche müssen"} auf die offenen Spieler verteilt werden.</div>`}
       ${validation.reason === "total" && isLast ? `<div class="warning-box">Insgesamt müssen genau ${round.cards} Stiche eingetragen sein.</div>` : ""}
       <ul class="previous-values inline-bid-players">${previousValuesList(order, round.tricks, trickWizard.step, "tricks", round)}</ul>
       <div class="inline-bid-actions">
-        <button class="secondary-button" type="button" data-action="trick-back" ${trickWizard.step === 0 ? "disabled" : ""}>Zurück</button>
+        <button class="secondary-button" type="button" data-action="trick-back">Zurück</button>
         <small>Zahl antippen – danach geht es direkt weiter.</small>
       </div>
     </section>`;
@@ -2066,8 +2061,34 @@ document.addEventListener("click", (event) => {
       if (bidWizard.step > 0) bidWizard.step -= 1;
       render();
       break;
+    case "back-to-bids": {
+      const round = currentRound();
+      if (round?.phase !== "playing") break;
+      if (playerIds().some((playerId) => Number.isInteger(round.tricks[playerId]))) {
+        showToast("Die Auswertung wurde bereits begonnen.");
+        break;
+      }
+      round.phase = "bidding";
+      trickWizard = null;
+      bidWizard = null;
+      persistGame();
+      render();
+      break;
+    }
+    case "start-tricks": {
+      const round = currentRound();
+      if (round?.phase !== "playing") break;
+      trickWizard = null;
+      ensureTrickWizard(round);
+      render();
+      break;
+    }
     case "trick-back":
-      if (trickWizard.step > 0) trickWizard.step -= 1;
+      if (trickWizard.step > 0) {
+        trickWizard.step -= 1;
+      } else {
+        trickWizard = null;
+      }
       render();
       break;
     case "edit-current-result":

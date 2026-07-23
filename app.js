@@ -77,6 +77,7 @@ let trickWizard = null;
 let editDraft = null;
 let toastTimer = null;
 let bidConfirmationTimer = null;
+let activeBidderAnnouncement = null;
 let accessError = "";
 let appUnlocked = readSessionUnlock();
 const deviceId = readDeviceId();
@@ -499,6 +500,33 @@ function playerIds() {
 
 function biddingOrder(roundIndex) {
   return biddingOrderForRound(roundIndex, game.players.length, game.startingDealerIndex ?? 0);
+}
+
+function spokenBidderName(name) {
+  const cleaned = String(name ?? "").trim();
+  return cleaned.toLocaleLowerCase("de-DE") === "kevin" ? "Migräne" : cleaned;
+}
+
+function announceCurrentBidder() {
+  if (!game || game.status !== "active" || !window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return;
+  const [firstBidderIndex] = biddingOrder(game.currentRoundIndex);
+  const firstBidder = game.players[firstBidderIndex];
+  if (!firstBidder) return;
+
+  const spokenName = spokenBidderName(firstBidder.name);
+  const utterance = new window.SpeechSynthesisUtterance([spokenName, spokenName, spokenName].join(". "));
+  utterance.lang = "de-DE";
+  utterance.rate = 0.9;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  utterance.onend = () => {
+    if (activeBidderAnnouncement === utterance) activeBidderAnnouncement = null;
+  };
+  utterance.onerror = utterance.onend;
+
+  window.speechSynthesis.cancel();
+  activeBidderAnnouncement = utterance;
+  window.speechSynthesis.speak(utterance);
 }
 
 function gameId() {
@@ -1448,6 +1476,7 @@ function startGame() {
     persistGame();
     navigator.storage?.persist?.().catch(() => {});
     render();
+    announceCurrentBidder();
     showToast("Partie angelegt und automatisch gespeichert.");
   } catch (error) {
     showToast(error.message);
@@ -1635,6 +1664,7 @@ function advanceRound() {
   persistGame();
   if (game.status === "finished") archiveCompletedGame(game);
   render();
+  if (game.status === "active") announceCurrentBidder();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1834,6 +1864,7 @@ function startRematch() {
   });
   persistGame();
   render();
+  announceCurrentBidder();
   window.scrollTo({ top: 0, behavior: "smooth" });
   showToast("Revanche ist bereit.");
 }

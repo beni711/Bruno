@@ -8,6 +8,8 @@ Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetrage
 
 Nach den Ansagen erscheint zuerst „Runde läuft“ mit den Schaltflächen **Zurück** und **Stiche auswerten**. Die Rundenauswertung öffnet danach ohne Popup direkt in der Rundenseite. Dort zeigt die Spielerliste Ansage und gemachte Stiche je Person. Ein Tipp auf die tatsächlich gemachten Stiche wechselt sofort weiter. Sobald für die letzte offene Person nur noch eine Stichzahl möglich ist, wird diese automatisch eingetragen und die Runde abgeschlossen; sind bereits alle Stiche verteilt, werden weitere offene Ergebnisse automatisch mit 0 ergänzt.
 
+Beim Start einer Partie und nach jedem lokalen Wechsel zur nächsten Runde liest das Gerät den Namen der Person, die mit dem Ansagen beginnt, dreimal vor. Für Kevin wird dabei dreimal „Migräne“ gesprochen. Beim Neuladen, beim Wiedereinstieg in die Online-Session und bei einer bloßen Firebase-Aktualisierung wird die Ansage nicht wiederholt.
+
 ## Enthaltene Regeln
 
 - Zwei Kartendecks von 7 bis Ass, insgesamt 64 Karten.

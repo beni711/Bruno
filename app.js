@@ -4,6 +4,7 @@ import {
   PENALTY_VALUES,
   autoFillRemainingTricks,
   biddingOrderForRound,
+  buildRoundSchedule,
   createGame,
   isGameShapeValid,
   maxCardsForPlayers,
@@ -446,6 +447,58 @@ function effectiveSetupMaxCards(playerCount = setupPlayers.length) {
     ? maxCardsForPlayers(playerCount)
     : DEFAULT_SETUP_MAX_CARDS;
   return Math.min(normalizeMaxCardsPreference(setupMaxCards), allowedMaximum);
+}
+
+function canChangeActiveMaxCards(maxCards) {
+  if (!game || game.status !== "active") return false;
+  let schedule;
+  try {
+    schedule = buildRoundSchedule(game.players.length, maxCards);
+  } catch {
+    return false;
+  }
+  if (game.currentRoundIndex >= schedule.length) return false;
+  return game.rounds.slice(0, game.currentRoundIndex).every((round, index) => (
+    round.phase === "complete" && round.cards === schedule[index]
+  ));
+}
+
+function changeActiveMaxCards(requestedMaxCards) {
+  const maxCards = Number(requestedMaxCards);
+  if (!canChangeActiveMaxCards(maxCards)) {
+    showToast("Diese höchste Kartenrunde ist im laufenden Spiel nicht mehr möglich.");
+    render();
+    return;
+  }
+  if (maxCards === game.maxCards) return;
+
+  const round = currentRound();
+  const hasCurrentEntries = round.phase !== "bidding"
+    || playerIds().some((playerId) => Number.isInteger(round.bids[playerId]) || Number.isInteger(round.tricks[playerId]));
+  if (hasCurrentEntries && !window.confirm(`Die Eingaben aus Runde ${round.number} werden verworfen. Mit ${maxCards} als höchster Kartenrunde geht es danach korrekt weiter. Fortfahren?`)) {
+    render();
+    return;
+  }
+
+  const rebuilt = createGame(game.players.map((player) => player.name), {
+    gameId: game.gameId,
+    now: game.createdAt,
+    startingDealerIndex: game.startingDealerIndex ?? 0,
+    maxCards,
+    profileIds: game.players.map((player) => player.profileId ?? normalizedProfileId(player.name)),
+  });
+  const completedRounds = game.rounds.slice(0, game.currentRoundIndex).map((entry) => structuredClone(entry));
+  game.maxCards = maxCards;
+  game.rounds = [...completedRounds, ...rebuilt.rounds.slice(game.currentRoundIndex)];
+  game.status = "active";
+  delete game.finishedAt;
+  clearBidConfirmation();
+  bidWizard = null;
+  trickWizard = null;
+  persistGame();
+  render();
+  announceCurrentBidder();
+  showToast(`Höchste Kartenrunde auf ${maxCards} geändert.`);
 }
 
 function archiveCompletedGame(completedGame) {
@@ -1403,6 +1456,11 @@ function renderGame() {
   const dealer = game.players[round.dealerIndex];
   const firstBidder = game.players[(round.dealerIndex + 1) % game.players.length];
   const trumpText = round.cards === 1 ? "Aufdeckkarte verdeckt" : "Trumpfkarte aufdecken";
+  const allowedMaximum = maxCardsForPlayers(game.players.length);
+  const activeMaxCardsOptions = Array.from(
+    { length: allowedMaximum - MIN_SELECTABLE_MAX_CARDS + 1 },
+    (_, index) => allowedMaximum - index,
+  ).map((cards) => `<option value="${cards}" ${cards === game.maxCards ? "selected" : ""} ${canChangeActiveMaxCards(cards) ? "" : "disabled"}>${cards} Karten · ${cards * 2 - 1} Runden</option>`).join("");
 
   app.innerHTML = `
     ${brandMarkup(true)}
@@ -1410,6 +1468,10 @@ function renderGame() {
       <div class="progress-wrap">
         <div class="progress-labels"><span>Runde ${round.number} von ${game.rounds.length}</span><span>${Math.round(progress)} %</span></div>
         <div class="progress-track"><div class="progress-bar" style="width: ${progress}%"></div></div>
+        <div class="live-max-cards-picker">
+          <label for="active-max-cards-select">Höchste Kartenrunde</label>
+          <select id="active-max-cards-select" aria-label="Höchste Kartenrunde im laufenden Spiel ändern">${activeMaxCardsOptions}</select>
+        </div>
       </div>
 
       <section class="round-card">
@@ -1966,6 +2028,10 @@ document.addEventListener("change", (event) => {
     setupMaxCards = normalizeMaxCardsPreference(event.target.value);
     persistSetup();
     render();
+    return;
+  }
+  if (event.target.id === "active-max-cards-select") {
+    changeActiveMaxCards(event.target.value);
     return;
   }
   const bidPlayerId = event.target.dataset.editBid;

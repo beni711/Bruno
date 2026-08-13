@@ -444,6 +444,28 @@ h3 {
   background: #dfddd5;
 }
 
+.live-max-cards-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.live-max-cards-picker select {
+  max-width: 190px;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--green);
+  background: var(--surface);
+  font-weight: 850;
+}
+
 .progress-bar {
   height: 100%;
   border-radius: inherit;

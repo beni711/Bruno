@@ -6,6 +6,8 @@ Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert d
 
 Vor dem Start lässt sich die höchste Kartenrunde auswählen. Standard sind 11 Karten; abhängig von der Spielerzahl begrenzt die App die Auswahl automatisch. Bei 11 Karten läuft die Partie von 1 bis 11 und wieder zurück auf 1, also über 21 Runden.
 
+Die höchste Kartenrunde kann auch während einer laufenden Partie direkt unter dem Rundenfortschritt korrigiert werden. Bereits abgeschlossene Runden bleiben erhalten; die aktuelle Runde wird bei einer notwendigen Änderung verworfen und mit der korrekten Kartenanzahl neu begonnen. Wird beispielsweise in Runde 9 von 21 auf höchstens 8 Karten umgestellt, geht es mit 7 Karten als Runde 9 von 15 weiter.
+
 Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetragen. Ein Tipp auf eine Stichzahl speichert die Ansage sofort, zeigt ungefähr 1,3 Sekunden lang nur den Spielernamen und die gewählte Zahl an und wechselt dann automatisch zur nächsten Person. Die großen Summenfelder entfallen; die Spielerliste zeigt die Ansage jeder Person kompakt als Zahl in einem Quadrat und den für die letzte Person gesperrten Wert.
 
 Nach den Ansagen erscheint zuerst „Runde läuft“ mit den Schaltflächen **Zurück** und **Stiche auswerten**. Die Rundenauswertung öffnet danach ohne Popup direkt in der Rundenseite. Dort zeigt die Spielerliste Ansage und gemachte Stiche je Person. Ein Tipp auf die tatsächlich gemachten Stiche wechselt sofort weiter. Sobald für die letzte offene Person nur noch eine Stichzahl möglich ist, wird diese automatisch eingetragen und die Runde abgeschlossen; sind bereits alle Stiche verteilt, werden weitere offene Ergebnisse automatisch mit 0 ergänzt.

@@ -6,6 +6,7 @@ import {
   biddingOrderForRound,
   createGame,
   isGameShapeValid,
+  maxCardsForPlayers,
   penaltyPointsForRound,
   pointsForRound,
   restoreGameCollections,
@@ -31,6 +32,8 @@ const ONLINE_SESSION_URL = `${FIREBASE_DATABASE_URL}/sessions/${ONLINE_SESSION_S
 const ONLINE_SESSION_VERSION = 1;
 const ONLINE_POLL_INTERVAL = 5000;
 const BID_CONFIRMATION_DURATION = 1300;
+const DEFAULT_SETUP_MAX_CARDS = 11;
+const MIN_SELECTABLE_MAX_CARDS = 6;
 const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
 const LEGACY_STORAGE_KEYS = {
   game: "aufzug.game.v1",
@@ -72,6 +75,7 @@ let archivedGames = loadArchive();
 const savedSetup = loadSetupState();
 let setupPlayers = savedSetup.players;
 let setupStartingMixerName = savedSetup.startingMixerName;
+let setupMaxCards = savedSetup.maxCards;
 let bidWizard = null;
 let trickWizard = null;
 let editDraft = null;
@@ -148,6 +152,7 @@ function remoteSetupSnapshot() {
   return {
     players: [...setupPlayers],
     startingMixerName: setupStartingMixerName,
+    maxCards: setupMaxCards,
   };
 }
 
@@ -198,6 +203,7 @@ function saveRemoteStateLocally(snapshot) {
     setupPlayers = normalizeSetupPlayers(snapshot.setup.players);
     const requestedMixer = canonicalPlayerName(snapshot.setup.startingMixerName ?? "");
     setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
+    setupMaxCards = normalizeMaxCardsPreference(snapshot.setup.maxCards);
     localStorage.setItem(SETUP_KEY, JSON.stringify(remoteSetupSnapshot()));
   }
 
@@ -402,6 +408,9 @@ function canonicalPlayerName(name) {
 function migrateGameRoster(savedGame) {
   restoreGameCollections(savedGame);
   if (!savedGame || !Array.isArray(savedGame.players)) return savedGame;
+  if (!Number.isInteger(savedGame.maxCards) && Array.isArray(savedGame.rounds) && savedGame.rounds.length) {
+    savedGame.maxCards = Math.max(...savedGame.rounds.map((round) => Number(round?.cards) || 0));
+  }
   for (const player of savedGame.players) {
     const migratedName = canonicalPlayerName(player.name);
     const oldProfileName = String(player.profileId ?? "").replace(/^fixed:/, "");
@@ -423,6 +432,20 @@ function normalizeSetupPlayers(players) {
     if (normalized.length === MAX_PLAYERS) break;
   }
   return normalized;
+}
+
+function normalizeMaxCardsPreference(value) {
+  const requested = Number(value);
+  return Number.isInteger(requested)
+    ? Math.min(DEFAULT_SETUP_MAX_CARDS, Math.max(MIN_SELECTABLE_MAX_CARDS, requested))
+    : DEFAULT_SETUP_MAX_CARDS;
+}
+
+function effectiveSetupMaxCards(playerCount = setupPlayers.length) {
+  const allowedMaximum = playerCount >= MIN_PLAYERS && playerCount <= MAX_PLAYERS
+    ? maxCardsForPlayers(playerCount)
+    : DEFAULT_SETUP_MAX_CARDS;
+  return Math.min(normalizeMaxCardsPreference(setupMaxCards), allowedMaximum);
 }
 
 function archiveCompletedGame(completedGame) {
@@ -460,11 +483,12 @@ function loadSetupState() {
     const migrated = {
       players,
       startingMixerName: players.includes(requestedMixer) ? requestedMixer : (players[0] ?? null),
+      maxCards: normalizeMaxCardsPreference(Array.isArray(parsed) ? null : parsed.maxCards),
     };
     localStorage.setItem(SETUP_KEY, JSON.stringify(migrated));
     return migrated;
   } catch {
-    return { players: [], startingMixerName: null };
+    return { players: [], startingMixerName: null, maxCards: DEFAULT_SETUP_MAX_CARDS };
   }
 }
 
@@ -472,6 +496,7 @@ function persistSetup() {
   localStorage.setItem(SETUP_KEY, JSON.stringify({
     players: setupPlayers,
     startingMixerName: setupStartingMixerName,
+    maxCards: setupMaxCards,
   }));
   queueOnlineSync();
 }
@@ -650,6 +675,12 @@ function renderSetup() {
     setupStartingMixerName = setupPlayers[0] ?? null;
   }
   const canStart = count >= MIN_PLAYERS && count <= MAX_PLAYERS;
+  const maximumCards = effectiveSetupMaxCards(count);
+  const allowedMaximum = canStart ? maxCardsForPlayers(count) : DEFAULT_SETUP_MAX_CARDS;
+  const maxCardsOptions = Array.from(
+    { length: allowedMaximum - MIN_SELECTABLE_MAX_CARDS + 1 },
+    (_, index) => allowedMaximum - index,
+  ).map((cards) => `<option value="${cards}" ${cards === maximumCards ? "selected" : ""}>${cards} Karten · ${cards * 2 - 1} Runden</option>`).join("");
 
   const playerRows = setupPlayers.map((name, index) => {
     const fixed = FIXED_PLAYERS.includes(name);
@@ -699,6 +730,9 @@ function renderSetup() {
           <div class="mixer-picker">
             <label for="starting-mixer-select">Wer mischt zuerst?</label>
             <select id="starting-mixer-select" class="text-input">${mixerOptions}</select>
+            <label for="max-cards-select" style="margin-top:12px">Höchste Kartenrunde</label>
+            <select id="max-cards-select" class="text-input" aria-describedby="max-cards-help">${maxCardsOptions}</select>
+            <span id="max-cards-help" class="field-label" style="margin-top:8px">1 bis ${maximumCards} und wieder zurück · ${maximumCards * 2 - 1} Spielrunden</span>
           </div>` : ""}
 
         <div class="action-row">
@@ -1471,6 +1505,7 @@ function startGame() {
     game = createGame(setupPlayers, {
       gameId: gameId(),
       startingDealerIndex,
+      maxCards: effectiveSetupMaxCards(),
       profileIds: setupPlayers.map(normalizedProfileId),
     });
     persistGame();
@@ -1747,6 +1782,7 @@ function exportGame() {
     setup: {
       players: setupPlayers,
       startingMixerName: setupStartingMixerName,
+      maxCards: setupMaxCards,
     },
   };
   const payload = JSON.stringify(backup, null, 2);
@@ -1798,6 +1834,7 @@ async function importGameFromFile(file) {
         setupPlayers = normalizeSetupPlayers(parsed.setup.players);
         const requestedMixer = canonicalPlayerName(parsed.setup.startingMixerName ?? "");
         setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
+        setupMaxCards = normalizeMaxCardsPreference(parsed.setup.maxCards);
         persistSetup();
       }
     } else if (isGameShapeValid(migratedStandalone)) {
@@ -1828,6 +1865,7 @@ function resetToSetup(prefill = true) {
   if (prefill && game) {
     setupPlayers = game.players.map((player) => player.name);
     setupStartingMixerName = game.players[game.startingDealerIndex ?? 0]?.name ?? setupPlayers[0] ?? null;
+    setupMaxCards = normalizeMaxCardsPreference(game.maxCards);
   }
   game = null;
   removeSavedGame();
@@ -1857,9 +1895,11 @@ function lockApp() {
 
 function startRematch() {
   const names = game.players.map((player) => player.name);
+  const maxCards = game.maxCards ?? Math.max(...game.rounds.map((round) => round.cards));
   game = createGame(names, {
     gameId: gameId(),
     startingDealerIndex: game.startingDealerIndex ?? 0,
+    maxCards,
     profileIds: game.players.map((player) => player.profileId ?? normalizedProfileId(player.name)),
   });
   persistGame();
@@ -1918,6 +1958,12 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("change", (event) => {
   if (event.target.id === "starting-mixer-select") {
     setupStartingMixerName = event.target.value;
+    persistSetup();
+    render();
+    return;
+  }
+  if (event.target.id === "max-cards-select") {
+    setupMaxCards = normalizeMaxCardsPreference(event.target.value);
     persistSetup();
     render();
     return;

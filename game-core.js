@@ -17,8 +17,12 @@ export function maxCardsForPlayers(playerCount) {
   return Math.min(MAX_HAND_CARDS, Math.floor((DECK_SIZE - 1) / playerCount));
 }
 
-export function buildRoundSchedule(playerCount) {
-  const peak = maxCardsForPlayers(playerCount);
+export function buildRoundSchedule(playerCount, maxCards = maxCardsForPlayers(playerCount)) {
+  const allowedMaximum = maxCardsForPlayers(playerCount);
+  if (!Number.isInteger(maxCards) || maxCards < 1 || maxCards > allowedMaximum) {
+    throw new RangeError(`Die höchste Kartenrunde muss zwischen 1 und ${allowedMaximum} liegen.`);
+  }
+  const peak = maxCards;
   const ascending = Array.from({ length: peak }, (_, index) => index + 1);
   const descending = Array.from({ length: peak - 1 }, (_, index) => peak - index - 1);
   return [...ascending, ...descending];
@@ -140,7 +144,8 @@ export function createGame(playerNames, options = {}) {
   if (!Number.isInteger(startingDealerIndex) || startingDealerIndex < 0 || startingDealerIndex >= players.length) {
     throw new RangeError("Bitte einen gültigen ersten Mischer auswählen.");
   }
-  const schedule = buildRoundSchedule(players.length);
+  const maxCards = options.maxCards ?? maxCardsForPlayers(players.length);
+  const schedule = buildRoundSchedule(players.length, maxCards);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -150,6 +155,7 @@ export function createGame(playerNames, options = {}) {
     status: "active",
     currentRoundIndex: 0,
     startingDealerIndex,
+    maxCards,
     players,
     rounds: schedule.map((cards, index) => ({
       number: index + 1,
@@ -216,7 +222,16 @@ export function isGameShapeValid(game) {
   if (game.players.length < MIN_PLAYERS || game.players.length > MAX_PLAYERS) {
     return false;
   }
-  if (!Array.isArray(game.rounds) || game.rounds.length !== buildRoundSchedule(game.players.length).length) {
+  const maxCards = Number.isInteger(game.maxCards) ? game.maxCards : maxCardsForPlayers(game.players.length);
+  let expectedSchedule;
+  try {
+    expectedSchedule = buildRoundSchedule(game.players.length, maxCards);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(game.rounds)
+    || game.rounds.length !== expectedSchedule.length
+    || game.rounds.some((round, index) => round?.cards !== expectedSchedule[index])) {
     return false;
   }
   return Number.isInteger(game.currentRoundIndex)

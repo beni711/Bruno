@@ -4,11 +4,7 @@ Eine kleine, installierbare Web-App zum Zählen von Ansagen, Stichen und Punkten
 
 Die App verwendet den gemeinsamen Online-Sitzungscode `111111`, synchronisiert die laufende Partie über Firebase, speichert zusätzlich lokal, enthält die festen Spieler Beni, Kevin, Keven, Tobi B., Tobi S., Max und Michi, erlaubt Gäste und führt eine Langzeitstatistik aller abgeschlossenen Partien. Unter **Menü → Vergangene Spiele** stehen die Partien – neueste zuerst – jeweils mit Datum, Gewinner, Spielerzahl, Rundenzahl und vollständigem Endstand.
 
-Vor dem Start lässt sich die höchste Kartenrunde auswählen. Standard sind 11 Karten; abhängig von der Spielerzahl begrenzt die App die Auswahl automatisch. Bei 11 Karten läuft die Partie von 1 bis 11 und wieder zurück auf 1, also über 21 Runden.
-
-Beim Start prüft die App den erzeugten Spielplan nochmals. Die statischen App-Dateien sind gemeinsam versioniert, damit insbesondere auf iPhones keine alte Spielplanlogik mit der neuen Auswahloberfläche vermischt wird. Die Auswahl „8 Karten · 15 Runden“ erzeugt dadurch verlässlich die Folge 1 bis 8 und anschließend 7 bis 1.
-
-Die höchste Kartenrunde kann auch während einer laufenden Partie direkt unter dem Rundenfortschritt korrigiert werden. Bereits abgeschlossene Runden bleiben erhalten; die aktuelle Runde wird bei einer notwendigen Änderung verworfen und mit der korrekten Kartenanzahl neu begonnen. Wird beispielsweise in Runde 9 von 21 auf höchstens 8 Karten umgestellt, geht es mit 7 Karten als Runde 9 von 15 weiter.
+Nach der Spielerauswahl wird festgelegt, wie viele Runden gespielt werden. Die App bietet ausschließlich Spielpläne an, die mit der aktuellen Spielerzahl und den 64 Karten möglich sind. Beispielsweise bedeutet „15 Runden · bis 8 Karten“ die Folge 1 bis 8 und anschließend 7 bis 1. Die gewählte Rundenzahl wird vor dem Start nochmals geprüft und für die nächste Partie gespeichert. Eine missverständliche Änderung während einer laufenden Partie gibt es nicht mehr.
 
 Die Ansagen werden direkt und dauerhaft in der jeweiligen Rundenseite eingetragen. Ein Tipp auf eine Stichzahl speichert die Ansage sofort, zeigt ungefähr 1,3 Sekunden lang nur den Spielernamen und die gewählte Zahl an und wechselt dann automatisch zur nächsten Person. Die großen Summenfelder entfallen; die Spielerliste zeigt die Ansage jeder Person kompakt als Zahl in einem Quadrat und den für die letzte Person gesperrten Wert.
 

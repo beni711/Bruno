@@ -1,10 +1,10 @@
-const CACHE_NAME = "bruno-v25";
+const CACHE_NAME = "bruno-v29";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./game-core.js",
+  "./styles.css?v=1.7.0",
+  "./app.js?v=1.7.0",
+  "./game-core.js?v=1.7.0",
   "./manifest.webmanifest",
   "./favicon.svg",
   "./icon-192.png",

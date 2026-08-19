@@ -4,7 +4,6 @@ import {
   PENALTY_VALUES,
   autoFillRemainingTricks,
   biddingOrderForRound,
-  buildRoundSchedule,
   createGame,
   isGameShapeValid,
   maxCardsForPlayers,
@@ -17,7 +16,7 @@ import {
   validateBids,
   validateTricks,
   winnersForGame,
-} from "./game-core.js?v=1.7.0";
+} from "./game-core.js?v=1.8.0";
 
 const STORAGE_KEY = "bruno.game.v1";
 const SETUP_KEY = "bruno.setup.v1";
@@ -33,8 +32,7 @@ const ONLINE_SESSION_URL = `${FIREBASE_DATABASE_URL}/sessions/${ONLINE_SESSION_S
 const ONLINE_SESSION_VERSION = 1;
 const ONLINE_POLL_INTERVAL = 5000;
 const BID_CONFIRMATION_DURATION = 1300;
-const DEFAULT_SETUP_MAX_CARDS = 11;
-const MIN_SELECTABLE_MAX_CARDS = 6;
+const DEFAULT_SETUP_ROUND_COUNT = 21;
 const FIXED_PLAYERS = ["Beni", "Kevin", "Keven", "Tobi B.", "Tobi S.", "Max", "Michi"];
 const LEGACY_STORAGE_KEYS = {
   game: "aufzug.game.v1",
@@ -76,7 +74,7 @@ let archivedGames = loadArchive();
 const savedSetup = loadSetupState();
 let setupPlayers = savedSetup.players;
 let setupStartingMixerName = savedSetup.startingMixerName;
-let setupMaxCards = savedSetup.maxCards;
+let setupRoundCount = savedSetup.roundCount;
 let bidWizard = null;
 let trickWizard = null;
 let editDraft = null;
@@ -153,7 +151,7 @@ function remoteSetupSnapshot() {
   return {
     players: [...setupPlayers],
     startingMixerName: setupStartingMixerName,
-    maxCards: setupMaxCards,
+    roundCount: setupRoundCount,
   };
 }
 
@@ -204,7 +202,7 @@ function saveRemoteStateLocally(snapshot) {
     setupPlayers = normalizeSetupPlayers(snapshot.setup.players);
     const requestedMixer = canonicalPlayerName(snapshot.setup.startingMixerName ?? "");
     setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
-    setupMaxCards = normalizeMaxCardsPreference(snapshot.setup.maxCards);
+    setupRoundCount = normalizeRoundCountPreference(snapshot.setup.roundCount, snapshot.setup.maxCards);
     localStorage.setItem(SETUP_KEY, JSON.stringify(remoteSetupSnapshot()));
   }
 
@@ -435,70 +433,21 @@ function normalizeSetupPlayers(players) {
   return normalized;
 }
 
-function normalizeMaxCardsPreference(value) {
+function normalizeRoundCountPreference(value, legacyMaxCards) {
   const requested = Number(value);
-  return Number.isInteger(requested)
-    ? Math.min(DEFAULT_SETUP_MAX_CARDS, Math.max(MIN_SELECTABLE_MAX_CARDS, requested))
-    : DEFAULT_SETUP_MAX_CARDS;
+  if (Number.isInteger(requested) && requested >= 1 && requested <= DEFAULT_SETUP_ROUND_COUNT && requested % 2 === 1) {
+    return requested;
+  }
+  const oldCards = Number(legacyMaxCards);
+  if (Number.isInteger(oldCards) && oldCards >= 1 && oldCards <= 11) return oldCards * 2 - 1;
+  return DEFAULT_SETUP_ROUND_COUNT;
 }
 
-function effectiveSetupMaxCards(playerCount = setupPlayers.length) {
-  const allowedMaximum = playerCount >= MIN_PLAYERS && playerCount <= MAX_PLAYERS
-    ? maxCardsForPlayers(playerCount)
-    : DEFAULT_SETUP_MAX_CARDS;
-  return Math.min(normalizeMaxCardsPreference(setupMaxCards), allowedMaximum);
-}
-
-function canChangeActiveMaxCards(maxCards) {
-  if (!game || game.status !== "active") return false;
-  let schedule;
-  try {
-    schedule = buildRoundSchedule(game.players.length, maxCards);
-  } catch {
-    return false;
-  }
-  if (game.currentRoundIndex >= schedule.length) return false;
-  return game.rounds.slice(0, game.currentRoundIndex).every((round, index) => (
-    round.phase === "complete" && round.cards === schedule[index]
-  ));
-}
-
-function changeActiveMaxCards(requestedMaxCards) {
-  const maxCards = Number(requestedMaxCards);
-  if (!canChangeActiveMaxCards(maxCards)) {
-    showToast("Diese höchste Kartenrunde ist im laufenden Spiel nicht mehr möglich.");
-    render();
-    return;
-  }
-  if (maxCards === game.maxCards) return;
-
-  const round = currentRound();
-  const hasCurrentEntries = round.phase !== "bidding"
-    || playerIds().some((playerId) => Number.isInteger(round.bids[playerId]) || Number.isInteger(round.tricks[playerId]));
-  if (hasCurrentEntries && !window.confirm(`Die Eingaben aus Runde ${round.number} werden verworfen. Mit ${maxCards} als höchster Kartenrunde geht es danach korrekt weiter. Fortfahren?`)) {
-    render();
-    return;
-  }
-
-  const rebuilt = createGame(game.players.map((player) => player.name), {
-    gameId: game.gameId,
-    now: game.createdAt,
-    startingDealerIndex: game.startingDealerIndex ?? 0,
-    maxCards,
-    profileIds: game.players.map((player) => player.profileId ?? normalizedProfileId(player.name)),
-  });
-  const completedRounds = game.rounds.slice(0, game.currentRoundIndex).map((entry) => structuredClone(entry));
-  game.maxCards = maxCards;
-  game.rounds = [...completedRounds, ...rebuilt.rounds.slice(game.currentRoundIndex)];
-  game.status = "active";
-  delete game.finishedAt;
-  clearBidConfirmation();
-  bidWizard = null;
-  trickWizard = null;
-  persistGame();
-  render();
-  announceCurrentBidder();
-  showToast(`Höchste Kartenrunde auf ${maxCards} geändert.`);
+function effectiveSetupRoundCount(playerCount = setupPlayers.length) {
+  const maximumRounds = playerCount >= MIN_PLAYERS && playerCount <= MAX_PLAYERS
+    ? maxCardsForPlayers(playerCount) * 2 - 1
+    : DEFAULT_SETUP_ROUND_COUNT;
+  return Math.min(normalizeRoundCountPreference(setupRoundCount), maximumRounds);
 }
 
 function archiveCompletedGame(completedGame) {
@@ -536,12 +485,15 @@ function loadSetupState() {
     const migrated = {
       players,
       startingMixerName: players.includes(requestedMixer) ? requestedMixer : (players[0] ?? null),
-      maxCards: normalizeMaxCardsPreference(Array.isArray(parsed) ? null : parsed.maxCards),
+      roundCount: normalizeRoundCountPreference(
+        Array.isArray(parsed) ? null : parsed.roundCount,
+        Array.isArray(parsed) ? null : parsed.maxCards,
+      ),
     };
     localStorage.setItem(SETUP_KEY, JSON.stringify(migrated));
     return migrated;
   } catch {
-    return { players: [], startingMixerName: null, maxCards: DEFAULT_SETUP_MAX_CARDS };
+    return { players: [], startingMixerName: null, roundCount: DEFAULT_SETUP_ROUND_COUNT };
   }
 }
 
@@ -549,7 +501,7 @@ function persistSetup() {
   localStorage.setItem(SETUP_KEY, JSON.stringify({
     players: setupPlayers,
     startingMixerName: setupStartingMixerName,
-    maxCards: setupMaxCards,
+    roundCount: setupRoundCount,
   }));
   queueOnlineSync();
 }
@@ -728,12 +680,15 @@ function renderSetup() {
     setupStartingMixerName = setupPlayers[0] ?? null;
   }
   const canStart = count >= MIN_PLAYERS && count <= MAX_PLAYERS;
-  const maximumCards = effectiveSetupMaxCards(count);
-  const allowedMaximum = canStart ? maxCardsForPlayers(count) : DEFAULT_SETUP_MAX_CARDS;
-  const maxCardsOptions = Array.from(
-    { length: allowedMaximum - MIN_SELECTABLE_MAX_CARDS + 1 },
-    (_, index) => allowedMaximum - index,
-  ).map((cards) => `<option value="${cards}" ${cards === maximumCards ? "selected" : ""}>${cards} Karten · ${cards * 2 - 1} Runden</option>`).join("");
+  const selectedRoundCount = effectiveSetupRoundCount(count);
+  const allowedMaximumCards = canStart ? maxCardsForPlayers(count) : 11;
+  const roundCountOptions = Array.from(
+    { length: allowedMaximumCards },
+    (_, index) => allowedMaximumCards - index,
+  ).map((cards) => {
+    const rounds = cards * 2 - 1;
+    return `<option value="${rounds}" ${rounds === selectedRoundCount ? "selected" : ""}>${rounds} Runden · bis ${cards} ${pluralCards(cards)}</option>`;
+  }).join("");
 
   const playerRows = setupPlayers.map((name, index) => {
     const fixed = FIXED_PLAYERS.includes(name);
@@ -783,13 +738,13 @@ function renderSetup() {
           <div class="mixer-picker">
             <label for="starting-mixer-select">Wer mischt zuerst?</label>
             <select id="starting-mixer-select" class="text-input">${mixerOptions}</select>
-            <label for="max-cards-select" style="margin-top:12px">Höchste Kartenrunde</label>
-            <select id="max-cards-select" class="text-input" aria-describedby="max-cards-help">${maxCardsOptions}</select>
-            <span id="max-cards-help" class="field-label" style="margin-top:8px">1 bis ${maximumCards} und wieder zurück · ${maximumCards * 2 - 1} Spielrunden</span>
+            <label for="round-count-select" style="margin-top:12px">Wie viele Runden?</label>
+            <select id="round-count-select" class="text-input" aria-describedby="round-count-help">${roundCountOptions}</select>
+            <span id="round-count-help" class="field-label" style="margin-top:8px">Es werden nur Spielpläne angezeigt, die mit ${count} Spielern möglich sind.</span>
           </div>` : ""}
 
         <div class="action-row">
-          <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>Partie starten</button>
+          <button class="primary-button full-width" type="button" data-action="start-game" ${canStart ? "" : "disabled"}>${canStart ? `Partie mit ${selectedRoundCount} Runden starten` : "Partie starten"}</button>
         </div>
       </section>
     </main>`;
@@ -1456,11 +1411,6 @@ function renderGame() {
   const dealer = game.players[round.dealerIndex];
   const firstBidder = game.players[(round.dealerIndex + 1) % game.players.length];
   const trumpText = round.cards === 1 ? "Aufdeckkarte verdeckt" : "Trumpfkarte aufdecken";
-  const allowedMaximum = maxCardsForPlayers(game.players.length);
-  const activeMaxCardsOptions = Array.from(
-    { length: allowedMaximum - MIN_SELECTABLE_MAX_CARDS + 1 },
-    (_, index) => allowedMaximum - index,
-  ).map((cards) => `<option value="${cards}" ${cards === game.maxCards ? "selected" : ""} ${canChangeActiveMaxCards(cards) ? "" : "disabled"}>${cards} Karten · ${cards * 2 - 1} Runden</option>`).join("");
 
   app.innerHTML = `
     ${brandMarkup(true)}
@@ -1468,10 +1418,6 @@ function renderGame() {
       <div class="progress-wrap">
         <div class="progress-labels"><span>Runde ${round.number} von ${game.rounds.length}</span><span>${Math.round(progress)} %</span></div>
         <div class="progress-track"><div class="progress-bar" style="width: ${progress}%"></div></div>
-        <div class="live-max-cards-picker">
-          <label for="active-max-cards-select">Höchste Kartenrunde</label>
-          <select id="active-max-cards-select" aria-label="Höchste Kartenrunde im laufenden Spiel ändern">${activeMaxCardsOptions}</select>
-        </div>
       </div>
 
       <section class="round-card">
@@ -1564,22 +1510,22 @@ function startGame() {
   }
   try {
     const startingDealerIndex = setupPlayers.indexOf(setupStartingMixerName);
-    const selectedMaxCards = effectiveSetupMaxCards();
+    const selectedRoundCount = effectiveSetupRoundCount();
+    const selectedMaxCards = (selectedRoundCount + 1) / 2;
     game = createGame(setupPlayers, {
       gameId: gameId(),
       startingDealerIndex,
       maxCards: selectedMaxCards,
       profileIds: setupPlayers.map(normalizedProfileId),
     });
-    const expectedRoundCount = selectedMaxCards * 2 - 1;
-    if (game.maxCards !== selectedMaxCards || game.rounds.length !== expectedRoundCount) {
+    if (game.maxCards !== selectedMaxCards || game.rounds.length !== selectedRoundCount) {
       throw new Error("Der gewählte Spielplan konnte nicht korrekt erstellt werden.");
     }
     persistGame();
     navigator.storage?.persist?.().catch(() => {});
     render();
     announceCurrentBidder();
-    showToast(`Partie bis ${selectedMaxCards} Karten mit ${expectedRoundCount} Runden gestartet.`);
+    showToast(`Partie mit ${selectedRoundCount} Runden gestartet.`);
   } catch (error) {
     showToast(error.message);
   }
@@ -1849,7 +1795,7 @@ function exportGame() {
     setup: {
       players: setupPlayers,
       startingMixerName: setupStartingMixerName,
-      maxCards: setupMaxCards,
+      roundCount: setupRoundCount,
     },
   };
   const payload = JSON.stringify(backup, null, 2);
@@ -1901,7 +1847,7 @@ async function importGameFromFile(file) {
         setupPlayers = normalizeSetupPlayers(parsed.setup.players);
         const requestedMixer = canonicalPlayerName(parsed.setup.startingMixerName ?? "");
         setupStartingMixerName = setupPlayers.includes(requestedMixer) ? requestedMixer : (setupPlayers[0] ?? null);
-        setupMaxCards = normalizeMaxCardsPreference(parsed.setup.maxCards);
+        setupRoundCount = normalizeRoundCountPreference(parsed.setup.roundCount, parsed.setup.maxCards);
         persistSetup();
       }
     } else if (isGameShapeValid(migratedStandalone)) {
@@ -1932,7 +1878,7 @@ function resetToSetup(prefill = true) {
   if (prefill && game) {
     setupPlayers = game.players.map((player) => player.name);
     setupStartingMixerName = game.players[game.startingDealerIndex ?? 0]?.name ?? setupPlayers[0] ?? null;
-    setupMaxCards = normalizeMaxCardsPreference(game.maxCards);
+    setupRoundCount = game.rounds.length;
   }
   game = null;
   removeSavedGame();
@@ -2029,14 +1975,10 @@ document.addEventListener("change", (event) => {
     render();
     return;
   }
-  if (event.target.id === "max-cards-select") {
-    setupMaxCards = normalizeMaxCardsPreference(event.target.value);
+  if (event.target.id === "round-count-select") {
+    setupRoundCount = normalizeRoundCountPreference(event.target.value);
     persistSetup();
     render();
-    return;
-  }
-  if (event.target.id === "active-max-cards-select") {
-    changeActiveMaxCards(event.target.value);
     return;
   }
   const bidPlayerId = event.target.dataset.editBid;

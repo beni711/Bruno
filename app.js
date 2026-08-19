@@ -17,7 +17,7 @@ import {
   validateBids,
   validateTricks,
   winnersForGame,
-} from "./game-core.js";
+} from "./game-core.js?v=1.7.0";
 
 const STORAGE_KEY = "bruno.game.v1";
 const SETUP_KEY = "bruno.setup.v1";
@@ -1564,17 +1564,22 @@ function startGame() {
   }
   try {
     const startingDealerIndex = setupPlayers.indexOf(setupStartingMixerName);
+    const selectedMaxCards = effectiveSetupMaxCards();
     game = createGame(setupPlayers, {
       gameId: gameId(),
       startingDealerIndex,
-      maxCards: effectiveSetupMaxCards(),
+      maxCards: selectedMaxCards,
       profileIds: setupPlayers.map(normalizedProfileId),
     });
+    const expectedRoundCount = selectedMaxCards * 2 - 1;
+    if (game.maxCards !== selectedMaxCards || game.rounds.length !== expectedRoundCount) {
+      throw new Error("Der gewählte Spielplan konnte nicht korrekt erstellt werden.");
+    }
     persistGame();
     navigator.storage?.persist?.().catch(() => {});
     render();
     announceCurrentBidder();
-    showToast("Partie angelegt und automatisch gespeichert.");
+    showToast(`Partie bis ${selectedMaxCards} Karten mit ${expectedRoundCount} Runden gestartet.`);
   } catch (error) {
     showToast(error.message);
   }
